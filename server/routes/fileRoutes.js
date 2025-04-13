@@ -1,46 +1,45 @@
+/* === File: routes/fileRoutes.js === */
 const express = require("express");
 const multer = require("multer");
-const path = require("path");
-const File = require("../models/Document");
+const fileController = require("../controllers/filecontroller");
+// Assuming you have authentication middleware to get senderId
+// const authMiddleware = require('../middleware/auth'); // Example
 
 const router = express.Router();
 
-// Multer setup for file storage
+// --- Multer Configuration for Encrypted Files ---
+// Use memory storage to get the file as a buffer in req.file.buffer
+// Avoids saving the encrypted blob to disk temporarily.
+const memoryStorage = multer.memoryStorage();
+const uploadEncrypted = multer({
+    storage: memoryStorage,
+    limits: { fileSize: 100 * 1024 * 1024 } // Example: Limit file size to 100MB
+});
+
+// --- New Route for Encrypted Uploads ---
+// POST /api/files/upload-encrypted
+// - Uses multer memory storage to handle the 'encryptedFile' field from FormData.
+// - Expects 'recipientId' also in the FormData body.
+// - Assumes auth middleware adds sender info to req.user
+router.post(
+    '/upload-encrypted',
+    // authMiddleware, // Apply authentication middleware first
+    uploadEncrypted.single('encryptedFile'), // Use multer memory storage
+    fileController.uploadEncryptedFile // Call the new controller function
+);
+
+
+// --- Old Route (Commented out or Removed) ---
+/*
+const path = require("path");
 const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    console.log("📂 Saving file to uploads/");
-    cb(null, "./uploads");
-  },
-  filename: (req, file, cb) => {
-    const filename = Date.now() + path.extname(file.originalname);
-    console.log(`📄 Saving file as: ${filename}`);
-    cb(null, filename);
-  },
+  destination: (req, file, cb) => cb(null, "./uploads"),
+  filename: (req, file, cb) => cb(null, Date.now() + path.extname(file.originalname)),
 });
-
 const upload = multer({ storage });
-
-// POST /api/files/upload
 router.post("/upload", upload.single("file"), async (req, res) => {
-  console.log("✅ Received upload request");
-  
-  if (!req.file) {
-    console.log("❌ No file uploaded");
-    return res.status(400).json({ error: "No file uploaded" });
-  }
-
-  try {
-    console.log("📂 File uploaded:", req.file);
-    // Save file details to MongoDB
-    const file = new File({ filename: req.file.filename, path: req.file.path });
-    await file.save();
-
-    console.log("✅ File saved to database");
-    res.json({ message: "File uploaded successfully", file });
-  } catch (error) {
-    console.error("❌ Upload error:", error);
-    res.status(500).json({ error: "Error saving file" });
-  }
+    // ... old logic saving unencrypted file path ...
 });
+*/
 
 module.exports = router;
