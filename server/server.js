@@ -1,42 +1,37 @@
-/* === File: server.js === */
-
 const express = require("express");
 const connectDB = require("./config/db");
 const cors = require("cors");
-const fileRoutes = require("./routes/fileRoutes"); // Routes now handle encrypted uploads
-require("dotenv").config();
+const path = require('path'); // Needed for authMiddleware path potentially
+require("dotenv").config(); // Load .env variables
 
-// const fs = require("fs"); // No longer needed for uploads dir creation
-// if (!fs.existsSync("./uploads")) {
-//   fs.mkdirSync("./uploads");
-// }
+// --- Route Imports ---
+const fileRoutes = require("./routes/fileRoutes");
+const authRoutes = require("./routes/authRoutes"); // Import auth routes
 
+// --- Middleware Imports ---
+const authMiddleware = require('./middleware/authMiddleware'); // Import auth middleware
 
 const app = express();
 
-// --- Middleware ---
+// --- Core Middleware ---
 app.use(cors()); // Enable CORS
-app.use(express.json()); // Middleware to parse JSON bodies (useful if sending metadata as JSON)
-// express.urlencoded might be needed if sending standard form data along with file
-app.use(express.urlencoded({ extended: false }));
+app.use(express.json()); // Middleware to parse JSON bodies
+app.use(express.urlencoded({ extended: false })); // Parse URL-encoded bodies
 
-// --- Routes ---
-// TODO: Add authentication middleware here before file routes if needed
-// Example: app.use('/api/files', authMiddleware);
-app.use("/api/files", fileRoutes);
+// --- API Routes ---
+app.use("/api/auth", authRoutes); // Mount auth routes (public)
 
-// --- Remove static serving of './uploads' if no longer needed ---
-// app.use("/uploads", express.static("uploads"));
-
-// --- Optional: Log registered routes (for debugging) ---
-// const listEndpoints = require("express-list-endpoints");
-// console.log(listEndpoints(app));
-
+// Mount file routes AFTER auth middleware to protect them
+// Any request to /api/files/* will now require a valid token
+app.use("/api/files", authMiddleware, fileRoutes);
 
 // --- Database Connection ---
 connectDB();
 
 // --- Start Server ---
-const PORT = process.env.PORT || 5006; // Use the port from your original code
+const PORT = process.env.PORT || 5006;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 
+// --- Optional: Log registered routes after setup ---
+// const listEndpoints = require("express-list-endpoints");
+// console.log(listEndpoints(app));

@@ -1,5 +1,3 @@
-/* === File: client/src/components/FileUpload.jsx === */
-// *** UPDATED TO USE BROWSER APIs INSTEAD OF NODE BUFFER ***
 import React, { useState, useEffect } from 'react';
 import axios from "axios";
 
@@ -19,7 +17,6 @@ const readFileAsArrayBuffer = (file) => {
 
 // Helper function to manage Wasm memory (Browser version)
 const passBufferToWasm = (Module, jsBuffer) => {
-    // Ensure input is Uint8Array (ArrayBuffer needs conversion)
     const data = (jsBuffer instanceof Uint8Array) ? jsBuffer : new Uint8Array(jsBuffer);
     const bufferPtr = Module._malloc(data.length);
     if (!bufferPtr) throw new Error(`Wasm malloc failed for size ${data.length}`);
@@ -41,24 +38,20 @@ const uint8ArrayToHex = (buffer) => {
 // Receive wasmModule and publicParamsBuffer as props
 const FileUpload = ({ wasmModule, publicParamsBuffer }) => {
   const [file, setFile] = useState(null);
-  const [recipientId, setRecipientId] = useState(""); // State for recipient ID
-  const [statusMessage, setStatusMessage] = useState(""); // For user feedback
-  const [isProcessing, setIsProcessing] = useState(false); // Loading state
-
-  // --- State for TEST private key ---
+  const [recipientId, setRecipientId] = useState("");
+  const [statusMessage, setStatusMessage] = useState("");
+  const [isProcessing, setIsProcessing] = useState(false);
   const [privateKeyBuffer, setPrivateKeyBuffer] = useState(null);
   const [isLoadingKey, setIsLoadingKey] = useState(true);
 
-  // --- !!! INSECURE KEY LOADING FOR TESTING ONLY !!! ---
+  // --- Insecure Key Loading ---
   useEffect(() => {
       const loadTestKey = async () => {
           setIsLoadingKey(true);
           console.warn("FileUpload: Loading private key insecurely for testing!");
           try {
-              const keyResponse = await fetch('/mohit@iiita_private_key.dat');
-              if (!keyResponse.ok) {
-                  throw new Error(`Failed to fetch test private key: ${keyResponse.statusText}`);
-              }
+              const keyResponse = await fetch('/mohit@iiita_private_key.dat'); // Adjust if needed
+              if (!keyResponse.ok) { throw new Error(`Failed to fetch test key: ${keyResponse.statusText}`); }
               const keyArrayBuffer = await keyResponse.arrayBuffer();
               setPrivateKeyBuffer(new Uint8Array(keyArrayBuffer));
               console.log("FileUpload: Test private key loaded.");
@@ -71,24 +64,28 @@ const FileUpload = ({ wasmModule, publicParamsBuffer }) => {
       };
       loadTestKey();
   }, []);
-  // --- !!! END INSECURE KEY LOADING !!! ---
+  // --- End Insecure Key Loading ---
 
 
-  const handleFileChange = (e) => {
-    setFile(e.target.files[0]);
-    setStatusMessage("");
-  };
-
-  const handleRecipientChange = (e) => {
-    setRecipientId(e.target.value);
-  };
+  const handleFileChange = (e) => { setFile(e.target.files[0]); setStatusMessage(""); };
+  const handleRecipientChange = (e) => { setRecipientId(e.target.value); };
 
   const handleUploadAndEncrypt = async () => {
+    // --- Input Checks (same as before) ---
     if (!file) { setStatusMessage("Please select a file."); return; }
     if (!recipientId.trim()) { setStatusMessage("Please enter a recipient ID."); return; }
     if (!wasmModule) { setStatusMessage("Wasm module is not loaded yet."); return; }
     if (isLoadingKey || !privateKeyBuffer) { setStatusMessage("Test private key is not loaded yet."); return; }
     if (!publicParamsBuffer) { setStatusMessage("Public parameters are not loaded yet."); return; }
+
+    // --- Get Auth Token ---
+    const token = localStorage.getItem('token'); // Get token stored during login
+    if (!token) {
+        setStatusMessage("Error: You are not logged in.");
+        // Optionally redirect to login: navigate('/login');
+        return;
+    }
+    // --- End Get Auth Token ---
 
     setIsProcessing(true);
     setStatusMessage("Processing file...");
@@ -118,56 +115,50 @@ const FileUpload = ({ wasmModule, publicParamsBuffer }) => {
         wasmPrivKeyPtr = passBufferToWasm(wasmModule, privateKeyBuffer);
         wasmMsgPtr = passBufferToWasm(wasmModule, messageUint8Array);
         wasmPubParamsPtr = passBufferToWasm(wasmModule, publicParamsBuffer);
-
-        // *** Use TextEncoder instead of Buffer for recipient ID ***
-        const recipientIdBytes = new TextEncoder().encode(recipientId + '\0'); // Add null terminator
+        const recipientIdBytes = new TextEncoder().encode(recipientId + '\0');
         wasmRecipientIdPtr = passBufferToWasm(wasmModule, recipientIdBytes);
-        // *********************************************************
 
         setStatusMessage("Signing document...");
         console.log("Calling wasm_sign_buffer...");
-        wasmSigPtr = wasmModule.ccall(
-            'wasm_sign_buffer', 'number',
-            ['number', 'number', 'number', 'number', 'number'],
-            [wasmPrivKeyPtr, privateKeyBuffer.length, wasmMsgPtr, messageUint8Array.length, wasmSigLenPtr]
-        );
+        wasmSigPtr = wasmModule.ccall( 'wasm_sign_buffer', 'number', ['number', 'number', 'number', 'number', 'number'], [wasmPrivKeyPtr, privateKeyBuffer.length, wasmMsgPtr, messageUint8Array.length, wasmSigLenPtr] );
         if (!wasmSigPtr) throw new Error("Signing failed: wasm_sign_buffer returned null.");
         const sigLen = wasmModule.HEAPU32[wasmSigLenPtr / 4];
         console.log(`Signing successful. Signature length: ${sigLen}`);
         const signatureUint8Array = getBufferFromWasm(wasmModule, wasmSigPtr, sigLen);
-        // *** Use new hex helper for logging ***
         console.log("Signature generated (first few bytes):", uint8ArrayToHex(signatureUint8Array.slice(0, 10)));
-        // **************************************
 
         setStatusMessage("Encrypting document...");
         console.log("Calling wasm_encrypt_buffer...");
-        wasmEncPtr = wasmModule.ccall(
-            'wasm_encrypt_buffer', 'number',
-            ['number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number'],
-            [wasmPubParamsPtr, publicParamsBuffer.length, wasmRecipientIdPtr, wasmMsgPtr, messageUint8Array.length, wasmSigPtr, sigLen, wasmEncULenPtr, wasmEncTotalLenPtr]
-        );
+        wasmEncPtr = wasmModule.ccall( 'wasm_encrypt_buffer', 'number', ['number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number'], [wasmPubParamsPtr, publicParamsBuffer.length, wasmRecipientIdPtr, wasmMsgPtr, messageUint8Array.length, wasmSigPtr, sigLen, wasmEncULenPtr, wasmEncTotalLenPtr] );
          if (!wasmEncPtr) throw new Error("Encryption failed: wasm_encrypt_buffer returned null.");
         const encULen = wasmModule.HEAPU32[wasmEncULenPtr / 4];
         const encTotalLen = wasmModule.HEAPU32[wasmEncTotalLenPtr / 4];
         console.log(`Encryption successful. U Len: ${encULen}, Total Len: ${encTotalLen}`);
         const encryptedUint8Array = getBufferFromWasm(wasmModule, wasmEncPtr, encTotalLen);
-        // *** Use new hex helper for logging ***
         console.log("Encryption successful (first few bytes):", uint8ArrayToHex(encryptedUint8Array.slice(0, 10)));
-        // **************************************
 
         setStatusMessage("Preparing upload...");
         const encryptedBlob = new Blob([encryptedUint8Array], { type: 'application/octet-stream' });
         const uploadFormData = new FormData();
         uploadFormData.append("encryptedFile", encryptedBlob, `${file.name}.${recipientId}.enc`);
         uploadFormData.append("recipientId", recipientId);
-        // uploadFormData.append("senderId", "mohit@iiita"); // Get from auth context
 
         setStatusMessage("Uploading encrypted document...");
         console.log("Sending encrypted data to backend...");
+
+        // --- Prepare Axios config with Auth Header ---
+        const config = {
+            headers: {
+                "Content-Type": "multipart/form-data",
+                "Authorization": `Bearer ${token}` // Add the token here!
+            }
+        };
+        // --- End Prepare Axios config ---
+
         const response = await axios.post(
             "http://localhost:5006/api/files/upload-encrypted", // Use the new endpoint
             uploadFormData,
-            { headers: { "Content-Type": "multipart/form-data" } }
+            config // Pass the config with headers
         );
 
         setStatusMessage(`Upload successful: ${response.data.message}`);
@@ -177,9 +168,18 @@ const FileUpload = ({ wasmModule, publicParamsBuffer }) => {
 
     } catch (error) {
       console.error("Processing failed:", error);
-      setStatusMessage(`Error: ${error.message || 'Processing failed!'}`);
+      // Check if it was an auth error specifically
+      if (error.response && error.response.status === 401) {
+          setStatusMessage("Error: Authentication failed. Please log in again.");
+          // Optionally clear token and redirect to login
+          // localStorage.removeItem('token');
+          // navigate('/login');
+      } else {
+          setStatusMessage(`Error: ${error.response?.data?.message || error.message || 'Processing failed!'}`);
+      }
     } finally {
       console.log("Cleaning up Wasm memory...");
+      // --- Cleanup Wasm Memory (same as before) ---
       if (wasmSigPtr) wasmModule.ccall('wasm_free_buffer', null, ['number'], [wasmSigPtr]);
       if (wasmEncPtr) wasmModule.ccall('wasm_free_buffer', null, ['number'], [wasmEncPtr]);
       if (wasmSigLenPtr) wasmModule._free(wasmSigLenPtr);
@@ -189,6 +189,7 @@ const FileUpload = ({ wasmModule, publicParamsBuffer }) => {
       if (wasmMsgPtr) wasmModule._free(wasmMsgPtr);
       if (wasmPubParamsPtr) wasmModule._free(wasmPubParamsPtr);
       if (wasmRecipientIdPtr) wasmModule._free(wasmRecipientIdPtr);
+      // --- End Cleanup ---
       setIsProcessing(false);
     }
   };

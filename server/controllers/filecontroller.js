@@ -1,57 +1,34 @@
-/* === File: controllers/filecontroller.js === */
-const Document = require("../models/Document"); // Use the updated Document model name
+const Document = require("../models/Document");
 
-// --- New Controller for Encrypted File Uploads ---
+
+// --- uploadEncryptedFile function (from previous step - ensure senderId uses req.user.id or req.user.email consistently) ---
 const uploadEncryptedFile = async (req, res) => {
     console.log("Received encrypted upload request");
-
     try {
-        // Check if the encrypted file buffer exists (from multer memory storage)
         if (!req.file || !req.file.buffer) {
-            console.log("No encrypted file buffer uploaded");
             return res.status(400).json({ message: "No encrypted file data received." });
         }
-
-        // Get metadata from the request
-        // recipientId should be sent in the FormData body
         const { recipientId } = req.body;
-        // senderId should ideally come from auth middleware (e.g., req.user.id)
-        // Using a placeholder here - REPLACE with actual authenticated user ID
-        const senderId = req.user ? req.user.id : "test_sender_id"; // !! REPLACE PLACEHOLDER !!
-
-        // Get original filename (sent by client in FormData)
+        // *** Ensure senderId format matches how recipientId is stored (e.g., email) ***
+        // *** Or update Document model to use ObjectId for both ***
+        const senderId = req.user ? (req.user.email || req.user.id) : "test_sender_id_NEEDS_FIXING"; // Example: prefer email if available
         const originalFileName = req.file.originalname;
 
-        if (!recipientId) {
-             console.log("Recipient ID missing");
-             return res.status(400).json({ message: "Recipient ID is required." });
+        if (!recipientId || !originalFileName) {
+             return res.status(400).json({ message: "Recipient ID and filename are required." });
         }
-         if (!originalFileName) {
-             console.log("Original filename missing");
-             return res.status(400).json({ message: "Original filename is required." });
-        }
+        console.log(`Sender ID being saved: ${senderId} (Type: ${typeof senderId})`); // Log what's saved
 
-
-        console.log(`Received encrypted file: ${originalFileName}, size: ${req.file.buffer.length} bytes`);
-        console.log(`Sender ID: ${senderId}, Recipient ID: ${recipientId}`);
-
-        // Create a new document instance with the encrypted data and metadata
         const newDocument = new Document({
             originalFileName: originalFileName,
-            encryptedData: req.file.buffer, // Store the buffer directly
-            senderId: senderId,
-            recipientId: recipientId,
+            encryptedData: req.file.buffer,
+            senderId: senderId, // Make sure this matches recipientId format
+            recipientId: recipientId, // This is an email string from form
         });
-
-        // Save the document metadata and encrypted content to MongoDB
         await newDocument.save();
 
         console.log("✅ Encrypted document saved to database. ID:", newDocument._id);
-        res.status(201).json({
-            message: "Encrypted file uploaded and saved successfully.",
-            documentId: newDocument._id // Send back the ID
-        });
-
+        res.status(201).json({ message: "Encrypted file uploaded and saved successfully.", documentId: newDocument._id });
     } catch (error) {
         console.error("❌ Encrypted upload error:", error);
         res.status(500).json({ message: "Server error during encrypted file upload.", error: error.message });
@@ -59,29 +36,38 @@ const uploadEncryptedFile = async (req, res) => {
 };
 
 
-// --- Old Controller (Commented out or Removed) ---
-/*
-const multer = require("multer");
-const path = require("path");
-// const File = require("../models/File"); // Old model name?
+// --- Controller for Fetching Received Files (UPDATED QUERY) ---
+const getReceivedFiles = async (req, res) => {
+    console.log("Received request for received files");
+    try {
+        // Ensure user info (esp. email) is attached by authMiddleware
+        if (!req.user || !req.user.email) { // <<< CHECK FOR EMAIL
+             console.log("User not authenticated or email missing in getReceivedFiles");
+             return res.status(401).json({ message: 'User not authenticated or email missing.' });
+        }
+        const userEmail = req.user.email; // <<< GET EMAIL FROM req.user
 
-const storage = multer.diskStorage({
-  destination: "./uploads",
-  filename: (req, file, cb) => {
-    cb(null, Date.now() + path.extname(file.originalname));
-  },
-});
-const upload = multer({ storage }).single("file");
+        console.log(`DEBUG: Querying documents where recipientId matches req.user.email = ${userEmail}`);
 
-const uploadFile = async (req, res) => {
-  upload(req, res, async (err) => {
-     // ... old logic ...
-  });
+        // Find documents where the recipientId (string) matches the logged-in user's email (string)
+        const documents = await Document.find({ recipientId: userEmail }) // <<< USE EMAIL IN QUERY
+                                        .select('-encryptedData')
+                                        .sort({ createdAt: -1 });
+
+        console.log(`DEBUG: Found ${documents.length} documents matching query for ${userEmail}.`);
+        res.json(documents);
+
+    } catch (error) {
+        console.error("Error fetching received files:", error);
+        res.status(500).json({ message: "Failed to fetch received documents." });
+    }
 };
-*/
 
-// Export the new controller function
+
+
+
+// Export functions
 module.exports = {
     uploadEncryptedFile,
-    // uploadFile // Export old one only if still needed elsewhere
+    getReceivedFiles,
 };
