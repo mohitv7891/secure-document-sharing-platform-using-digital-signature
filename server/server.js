@@ -1,30 +1,37 @@
 const express = require("express");
 const connectDB = require("./config/db");
 const cors = require("cors");
+const path = require('path'); // Needed for authMiddleware path potentially
+require("dotenv").config(); // Load .env variables
+
+// --- Route Imports ---
 const fileRoutes = require("./routes/fileRoutes");
-require("dotenv").config();
+const authRoutes = require("./routes/authRoutes"); // Import auth routes
 
-const fs = require("fs");
-if (!fs.existsSync("./uploads")) {
-  fs.mkdirSync("./uploads");
-}
-
+// --- Middleware Imports ---
+const authMiddleware = require('./middleware/authMiddleware'); // Import auth middleware
 
 const app = express();
-app.use(cors());
-app.use(express.json());
-app.use("/uploads", express.static("uploads")); // Serve uploaded files
-app.use("/api/files", fileRoutes);
-app._router.stack.forEach((r) => {
-  if (r.route && r.route.path) {
-    console.log(`Registered route: ${r.route.stack[0].method.toUpperCase()} ${r.route.path}`);
-  }
-});
-const listEndpoints = require("express-list-endpoints");
-console.log(listEndpoints(app));
 
+// --- Core Middleware ---
+app.use(cors()); // Enable CORS
+app.use(express.json()); // Middleware to parse JSON bodies
+app.use(express.urlencoded({ extended: false })); // Parse URL-encoded bodies
 
+// --- API Routes ---
+app.use("/api/auth", authRoutes); // Mount auth routes (public)
+
+// Mount file routes AFTER auth middleware to protect them
+// Any request to /api/files/* will now require a valid token
+app.use("/api/files", authMiddleware, fileRoutes);
+
+// --- Database Connection ---
 connectDB();
 
-const PORT = process.env.PORT || 5002;
+// --- Start Server ---
+const PORT = process.env.PORT || 5006;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
+// --- Optional: Log registered routes after setup ---
+// const listEndpoints = require("express-list-endpoints");
+// console.log(listEndpoints(app));

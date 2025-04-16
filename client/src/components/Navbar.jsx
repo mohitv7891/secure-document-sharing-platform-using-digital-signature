@@ -1,32 +1,47 @@
-import { Link } from "react-router-dom";
+import React from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext'; // Import the useAuth hook
 
 const Navbar = () => {
+  const { isAuthenticated, user, logout } = useAuth(); // Get auth state and functions
+  const navigate = useNavigate();
+
+  const handleLogout = () => {
+    logout(); // Call logout from context
+    navigate('/login'); // Redirect to login after logout
+  };
+
   return (
-    <nav className="bg-gray-900 text-white fixed w-full top-0 left-0 shadow-lg z-50">
-      <div className="max-w-screen-xl mx-auto px-6 flex justify-between items-center py-4">
-        {/* Logo */}
-        <h1 className="text-2xl font-extrabold tracking-wide">
+    <nav className="bg-gray-800 text-white p-4 shadow-md">
+      <div className="container mx-auto flex justify-between items-center">
+        {/* Logo/Brand */}
+        <Link to={isAuthenticated ? "/dashboard" : "/"} className="text-xl font-bold">
           SecureDocs
-        </h1>
+        </Link>
 
         {/* Navigation Links */}
-        <div className="hidden md:flex space-x-6">
-          <Link to="/" className="hover:text-gray-300 transition">Home</Link>
-          <Link to="/about" className="hover:text-gray-300 transition">About</Link>
-          <Link to="/contact" className="hover:text-gray-300 transition">Contact</Link>
-        </div>
-
-        {/* Login & Signup Buttons */}
         <div className="space-x-4">
-          <Link to="/login" className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg">
-            Login
-          </Link>
-          <Link to="/signup" className="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg">
-            Signup
-          </Link>
-          <Link to="/dashboard" className="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg">
-            Dashboard
-          </Link>
+          {isAuthenticated ? (
+            // Links shown when logged IN
+            <>
+              {/* Display user info if available */}
+              {user && user.id && <span className="text-gray-300 text-sm">Welcome! ({user.id})</span>}
+              <Link to="/dashboard" className="hover:text-gray-300">Dashboard</Link>
+              {/* Add other authenticated links here */}
+              <button
+                onClick={handleLogout}
+                className="bg-red-600 hover:bg-red-700 px-3 py-1 rounded text-sm"
+              >
+                Logout
+              </button>
+            </>
+          ) : (
+            // Links shown when logged OUT
+            <>
+              <Link to="/login" className="hover:text-gray-300">Login</Link>
+              <Link to="/register" className="hover:text-gray-300">Register</Link>
+            </>
+          )}
         </div>
       </div>
     </nav>

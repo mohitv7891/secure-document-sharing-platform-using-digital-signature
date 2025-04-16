@@ -1,46 +1,42 @@
 const express = require("express");
 const multer = require("multer");
-const path = require("path");
-const File = require("../models/Document");
+const fileController = require("../controllers/filecontroller");
+// Assuming authMiddleware is required in server.js before these routes are mounted
+// OR you import and apply it individually here if needed:
+// const authMiddleware = require('../middleware/auth');
 
 const router = express.Router();
 
-// Multer setup for file storage
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    console.log("📂 Saving file to uploads/");
-    cb(null, "./uploads");
-  },
-  filename: (req, file, cb) => {
-    const filename = Date.now() + path.extname(file.originalname);
-    console.log(`📄 Saving file as: ${filename}`);
-    cb(null, filename);
-  },
+// --- Multer Configuration for Encrypted Files (from previous step) ---
+const memoryStorage = multer.memoryStorage();
+const uploadEncrypted = multer({
+    storage: memoryStorage,
+    limits: { fileSize: 100 * 1024 * 1024 }
 });
 
-const upload = multer({ storage });
+// --- Route for Encrypted Uploads (from previous step) ---
+// POST /api/files/upload-encrypted
+router.post(
+    '/upload-encrypted',
+    // Assuming authMiddleware is applied globally in server.js for /api/files
+    uploadEncrypted.single('encryptedFile'),
+    fileController.uploadEncryptedFile
+);
 
-// POST /api/files/upload
-router.post("/upload", upload.single("file"), async (req, res) => {
-  console.log("✅ Received upload request");
-  
-  if (!req.file) {
-    console.log("❌ No file uploaded");
-    return res.status(400).json({ error: "No file uploaded" });
-  }
+// --- NEW Route for Fetching Received Files ---
+// GET /api/files/received
+// This route MUST be protected by authMiddleware in server.js
+router.get(
+    '/received',
+    fileController.getReceivedFiles // Call the new controller function
+);
 
-  try {
-    console.log("📂 File uploaded:", req.file);
-    // Save file details to MongoDB
-    const file = new File({ filename: req.file.filename, path: req.file.path });
-    await file.save();
+// --- (Future Route) Route for Downloading a specific encrypted file ---
+// GET /api/files/download-encrypted/:id
+// router.get(
+//     '/download-encrypted/:id',
+//     fileController.downloadEncryptedFile // Controller function to be created later
+// );
 
-    console.log("✅ File saved to database");
-    res.json({ message: "File uploaded successfully", file });
-  } catch (error) {
-    console.error("❌ Upload error:", error);
-    res.status(500).json({ error: "Error saving file" });
-  }
-});
 
 module.exports = router;
