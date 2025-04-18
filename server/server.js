@@ -7,6 +7,7 @@ require("dotenv").config(); // Load .env variables
 // --- Route Imports ---
 const fileRoutes = require("./routes/fileRoutes");
 const authRoutes = require("./routes/authRoutes"); // Import auth routes
+const userRoutes = require("./routes/userRoutes");
 
 // --- Middleware Imports ---
 const authMiddleware = require('./middleware/authMiddleware'); // Import auth middleware
@@ -20,6 +21,7 @@ app.use(express.urlencoded({ extended: false })); // Parse URL-encoded bodies
 
 // --- API Routes ---
 app.use("/api/auth", authRoutes); // Mount auth routes (public)
+app.use("/api/users", userRoutes); // <-- MOUNT USER ROUTES (Protected internally by middleware)
 
 // Mount file routes AFTER auth middleware to protect them
 // Any request to /api/files/* will now require a valid token

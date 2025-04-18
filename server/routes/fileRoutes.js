@@ -3,7 +3,7 @@ const multer = require("multer");
 const fileController = require("../controllers/filecontroller");
 // Assuming authMiddleware is required in server.js before these routes are mounted
 // OR you import and apply it individually here if needed:
-// const authMiddleware = require('../middleware/auth');
+ const authMiddleware = require('../middleware/authMiddleware');
 
 const router = express.Router();
 
@@ -37,6 +37,13 @@ router.get(
 //     '/download-encrypted/:id',
 //     fileController.downloadEncryptedFile // Controller function to be created later
 // );
+// --- Route for Downloading Encrypted File Data --- ADD/UNCOMMENT THIS ---
+// Handles GET requests like /api/files/download-encrypted/6802a171...
 
+router.get(
+    '/download-encrypted/:id', // ':id' makes 'id' available as req.params.id
+    authMiddleware,            // Protect this route - only logged-in users
+    fileController.downloadEncryptedFile // Point to the new controller function
+);
 
 module.exports = router;

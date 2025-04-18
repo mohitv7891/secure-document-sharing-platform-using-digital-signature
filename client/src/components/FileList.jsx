@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react'; // Added useEffect for potential UI updates
 import axios from 'axios';
-import { useAuth } from '../context/AuthContext'; // To get token and potentially user key
+import { useAuth } from '../context/AuthContext'; // Import useAuth
 
-// --- Wasm Memory/Data Helpers (Copied from FileUpload for consistency) ---
+// --- Wasm Memory/Data Helpers (Remain the same) ---
 const passBufferToWasm = (Module, jsBuffer) => {
     const data = (jsBuffer instanceof Uint8Array) ? jsBuffer : new Uint8Array(jsBuffer);
     const bufferPtr = Module._malloc(data.length);
@@ -45,35 +45,76 @@ const uint8ArrayToString = (buffer) => {
 
 
 const FileList = ({ files = [], wasmModule, publicParamsBuffer }) => {
-  const { token, user } = useAuth(); // Get token for API calls and user info
-  // *** IMPORTANT: Assume useAuth() provides the key buffer ***
-  // Replace this with how you actually access the securely stored key buffer
-  const recipientPrivateKeyBuffer = user?.privateKeyBuffer || null; // EXAMPLE ACCESS - NEEDS IMPLEMENTATION
+  // --- Get values from AuthContext ---
+  const {
+      token,                   // Still need token for API calls
+      user,                    // User info (like email if needed)
+      privateKey,              // The Base64 encoded private key
+      isLoadingKey,            // Boolean: true if key is being fetched
+      keyError,                // String: error message if key fetch failed
+      apiClient                // Use the configured axios instance from context
+   } = useAuth();
+  // --- End AuthContext Access ---
+
+  // --- Remove placeholder key definition ---
+  // const recipientPrivateKeyBuffer = user?.privateKeyBuffer || null; // NO LONGER NEEDED
 
   const [selectedFile, setSelectedFile] = useState(null); // Store details of file being viewed
   const [decryptionStatus, setDecryptionStatus] = useState("");
   const [decryptedContent, setDecryptedContent] = useState("");
   const [verificationResult, setVerificationResult] = useState(""); // "VALID", "INVALID", "ERROR", ""
-  const [isProcessing, setIsProcessing] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false); // Tracks if *this specific file* is processing
+
+
+  // Optionally: Alert user if the key failed to load initially
+  useEffect(() => {
+      if(keyError) {
+          // Avoid alerting repeatedly, maybe only on component mount or if error changes
+          console.warn("FileList: AuthContext reported an error loading the private key:", keyError);
+          // You could show a persistent error message in the UI instead of an alert
+          // alert(`Warning: Could not load your private key. Decryption will fail. Error: ${keyError}`);
+      }
+  }, [keyError]);
+
 
   const handleDecryptAndVerify = async (documentId, senderId, originalFileName) => {
-    if (!wasmModule || !recipientPrivateKeyBuffer || !publicParamsBuffer || !token) {
-        alert("Error: Missing required components for decryption (Wasm module, private key, public params, or auth token).");
-        console.error("Missing prerequisites:", { wasmModule, recipientPrivateKeyBuffer, publicParamsBuffer, token });
+    setIsProcessing(true); // Indicate this specific operation started
+    setSelectedFile({ id: documentId, name: originalFileName }); // Show which file is processing
+    setDecryptionStatus(`Preparing for ${originalFileName}...`);
+    setDecryptedContent("");
+    setVerificationResult("");
+
+    // --- 1. Prerequisites Check (including AuthContext state) ---
+    if (isLoadingKey) {
+        alert("Your private key is still loading. Please wait a moment and try again.");
+        setIsProcessing(false); // Reset processing state
+        return;
+    }
+    if (keyError) {
+        alert(`Cannot decrypt: There was an error loading your private key: ${keyError}`);
+        setIsProcessing(false); // Reset processing state
+        return;
+    }
+     if (!privateKey) {
+         // This might happen briefly after login, or if fetch failed silently without error state
+        alert("Your private key is not available. Please ensure you are logged in correctly or try refreshing.");
+        setIsProcessing(false); // Reset processing state
+        return;
+    }
+    if (!wasmModule || !publicParamsBuffer || !token) {
+        alert("Error: Missing required components for decryption (Wasm module, public params, or auth token).");
+        console.error("Missing prerequisites:", { wasmModule, publicParamsBuffer, token });
+        setIsProcessing(false); // Reset processing state
         return;
     }
     if (!documentId || !senderId) {
         alert("Error: Missing document ID or sender ID.");
+        setIsProcessing(false); // Reset processing state
         return;
     }
+    // --- End Prerequisites Check ---
 
-    setIsProcessing(true);
-    setSelectedFile({ id: documentId, name: originalFileName }); // Show which file is processing
-    setDecryptionStatus(`Fetching ${originalFileName}...`);
-    setDecryptedContent("");
-    setVerificationResult("");
-
-    // --- Wasm Memory Pointers ---
+    // --- Wasm Memory Pointers (Initialize here) ---
     let wasmPrivKeyPtr = null;
     let wasmUPtr = null;
     let wasmVPtr = null;
@@ -86,19 +127,32 @@ const FileList = ({ files = [], wasmModule, publicParamsBuffer }) => {
     // --- End Wasm Memory Pointers ---
 
     try {
-        // 1. Fetch encrypted data + metadata from backend
-        const config = { headers: { 'Authorization': `Bearer ${token}` } };
-        const response = await axios.get(`http://localhost:5006/api/files/download-encrypted/${documentId}`, config);
-        const { encryptedDataB64 } = response.data; // Assuming senderId is already available
+        // --- 2. Decode the Base64 Private Key from Context ---
+        setDecryptionStatus("Decoding private key...");
+        let recipientPrivateKeyBuffer; // Define the variable here
+        try {
+            recipientPrivateKeyBuffer = base64ToUint8Array(privateKey);
+             console.log("Private key decoded for decryption (length):", recipientPrivateKeyBuffer.length);
+        } catch (decodeError) {
+             throw new Error(`Failed to decode stored private key: ${decodeError.message}`);
+        }
+        // --- End Key Decoding ---
+
+
+        // 3. Fetch encrypted data + metadata from backend
+        setDecryptionStatus(`Workspaceing ${originalFileName}...`);
+        // Use the apiClient from context which includes the token automatically
+        const response = await apiClient.get(`/files/download-encrypted/${documentId}`);
+        const { encryptedDataB64 } = response.data; // Assuming senderId is already available via props
 
         if (!encryptedDataB64) throw new Error("Encrypted data not found in server response.");
 
-        setDecryptionStatus("Decoding data...");
+        setDecryptionStatus("Decoding encrypted data...");
         const encryptedUint8Array = base64ToUint8Array(encryptedDataB64);
 
-        // 2. Determine U length & Split U||V
+        // 4. Determine U length & Split U||V
         // WARNING: Using hardcoded length 65 based on previous tests. Fragile!
-        // Replace this if U length is stored in DB or returned by backend.
+        // Consider making this dynamic if possible (e.g., store U length in DB)
         const uLen = 65;
         console.log(`Using assumed U length: ${uLen}`);
         if (uLen <= 0 || uLen >= encryptedUint8Array.length) {
@@ -109,16 +163,16 @@ const FileList = ({ files = [], wasmModule, publicParamsBuffer }) => {
         const vData = encryptedUint8Array.slice(uLen);
         console.log(`Split ciphertext: U len=${uLen}, V len=${vLen}`);
 
-        // 3. Prepare data for Wasm decryption
-        setDecryptionStatus("Preparing data for Wasm...");
+        // 5. Prepare data for Wasm decryption
+        setDecryptionStatus("Preparing data for Wasm decryption...");
         wasmDecLenPtr = wasmModule._malloc(4);
         if (!wasmDecLenPtr) throw new Error("Malloc failed for output length pointer");
 
-        wasmPrivKeyPtr = passBufferToWasm(wasmModule, recipientPrivateKeyBuffer);
+        wasmPrivKeyPtr = passBufferToWasm(wasmModule, recipientPrivateKeyBuffer); // Use decoded key buffer
         wasmUPtr = passBufferToWasm(wasmModule, uData);
         wasmVPtr = passBufferToWasm(wasmModule, vData);
 
-        // 4. Call Wasm Decrypt
+        // 6. Call Wasm Decrypt
         setDecryptionStatus("Decrypting...");
         console.log("Calling wasm_decrypt_buffer...");
         wasmDecPtr = wasmModule.ccall(
@@ -131,7 +185,7 @@ const FileList = ({ files = [], wasmModule, publicParamsBuffer }) => {
         console.log(`Decryption successful. Plaintext (Msg||Sig) length: ${decLen}`);
         const decryptedUint8Array = getBufferFromWasm(wasmModule, wasmDecPtr, decLen);
 
-        // 5. Split Plaintext (Message || Signature)
+        // 7. Split Plaintext (Message || Signature)
         // WARNING: Using hardcoded length 65 based on previous tests. Fragile!
         const sigLenExpected = 65;
         console.log(`Using assumed signature length: ${sigLenExpected}`);
@@ -143,14 +197,15 @@ const FileList = ({ files = [], wasmModule, publicParamsBuffer }) => {
         const signatureData = decryptedUint8Array.slice(msgLen);
         console.log(`Split plaintext: Msg len=${msgLen}, Sig len=${sigLenExpected}`);
 
-        // 6. Prepare data for Wasm verification
+        // 8. Prepare data for Wasm verification
         setDecryptionStatus("Preparing data for verification...");
         wasmPubParamsPtr = passBufferToWasm(wasmModule, publicParamsBuffer);
+        // Ensure senderId passed to WASM is null-terminated if required by C code
         wasmSenderIdPtr = passBufferToWasm(wasmModule, new TextEncoder().encode(senderId + '\0'));
         wasmMsgDataPtr = passBufferToWasm(wasmModule, messageData);
         wasmSigDataPtr = passBufferToWasm(wasmModule, signatureData);
 
-        // 7. Call Wasm Verify
+        // 9. Call Wasm Verify
         setDecryptionStatus("Verifying signature...");
         console.log("Calling wasm_verify_buffer...");
         const verifyResult = wasmModule.ccall(
@@ -159,7 +214,7 @@ const FileList = ({ files = [], wasmModule, publicParamsBuffer }) => {
             [wasmPubParamsPtr, publicParamsBuffer.length, wasmSenderIdPtr, wasmMsgDataPtr, messageData.length, wasmSigDataPtr, signatureData.length]
         );
 
-        // 8. Display results
+        // 10. Display results
         if (verifyResult === 0) {
             setVerificationResult("VALID");
             console.log("Verification VALID.");
@@ -179,8 +234,9 @@ const FileList = ({ files = [], wasmModule, publicParamsBuffer }) => {
         setDecryptionStatus(`Error: ${error.message || 'Decryption/Verification failed!'}`);
         setVerificationResult("ERROR");
     } finally {
-        // 9. Cleanup Wasm Memory
+        // 11. Cleanup Wasm Memory
         console.log("Cleaning up Wasm memory...");
+        // Check each pointer before freeing
         if (wasmDecPtr) wasmModule.ccall('wasm_free_buffer', null, ['number'], [wasmDecPtr]);
         if (wasmPrivKeyPtr) wasmModule._free(wasmPrivKeyPtr);
         if (wasmUPtr) wasmModule._free(wasmUPtr);
@@ -190,20 +246,27 @@ const FileList = ({ files = [], wasmModule, publicParamsBuffer }) => {
         if (wasmSenderIdPtr) wasmModule._free(wasmSenderIdPtr);
         if (wasmMsgDataPtr) wasmModule._free(wasmMsgDataPtr);
         if (wasmSigDataPtr) wasmModule._free(wasmSigDataPtr);
-        setIsProcessing(false);
+        setIsProcessing(false); // Reset processing state for this specific file
     }
   };
 
 
   // --- Render Logic ---
   if (!files || files.length === 0) {
-    return 
-    (
-    <p className="text-gray-600">You have not received any documents yet.</p>
-  );}
+    return <p className="text-gray-600">You have not received any documents yet.</p>;
+  }
+
+  // Determine if the decrypt button should be generally disabled (key loading/error)
+  const isDecryptDisabledGlobally = isLoadingKey || !!keyError || !privateKey;
 
   return (
     <div className="space-y-4">
+      {/* Optional: Display global key loading/error status */}
+       {isLoadingKey && <p className="text-blue-600">Loading private key...</p>}
+       {keyError && <p className="text-red-600 font-semibold">Key Error: {keyError}. Decryption disabled.</p>}
+       {!isLoadingKey && !privateKey && !keyError && <p className="text-orange-600">Private key not yet available.</p>}
+
+
       {/* File List Table */}
       <div className="overflow-x-auto bg-white rounded-lg shadow">
         <table className="min-w-full divide-y divide-gray-200">
@@ -224,8 +287,10 @@ const FileList = ({ files = [], wasmModule, publicParamsBuffer }) => {
                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                   <button
                     onClick={() => handleDecryptAndVerify(file._id, file.senderId, file.originalFileName)}
-                    disabled={isProcessing && selectedFile?.id === file._id} // Disable button for the file being processed
+                    // Disable if globally disabled OR if this specific file is processing
+                    disabled={isDecryptDisabledGlobally || (isProcessing && selectedFile?.id === file._id)}
                     className={`text-indigo-600 hover:text-indigo-900 disabled:text-gray-400 disabled:cursor-not-allowed`}
+                    title={isDecryptDisabledGlobally ? (keyError || "Private key not available or loading...") : ""} // Add tooltip explaining why it's disabled
                   >
                     {(isProcessing && selectedFile?.id === file._id) ? 'Processing...' : 'Decrypt & View'}
                   </button>
@@ -265,4 +330,3 @@ const FileList = ({ files = [], wasmModule, publicParamsBuffer }) => {
 };
 
 export default FileList;
-
