@@ -8,3 +8,6 @@ mongodb+srv://mohit:<db_password>@cluster0.an3nuds.mongodb.net/
 
 //pbc path
 /opt/homebrew/Cellar/pbc/0.5.14/lib/
+
+//Genetated app db_password
+dufy pqwp xgez uvdx 

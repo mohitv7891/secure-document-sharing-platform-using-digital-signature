@@ -25,7 +25,7 @@ const Navbar = () => {
             // Links shown when logged IN
             <>
               {/* Display user info if available */}
-              {user && user.id && <span className="text-gray-300 text-sm">Welcome! ({user.id})</span>}
+              {user && user.id && <span className="text-gray-300 text-sm">Welcome! ({user.email})</span>}
               <Link to="/dashboard" className="hover:text-gray-300">Dashboard</Link>
               {/* Add other authenticated links here */}
               <button

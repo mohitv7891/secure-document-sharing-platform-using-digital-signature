@@ -1,24 +1,27 @@
-import React, { useState } from 'react';
-import axios from 'axios';
-import { useAuth } from '../context/AuthContext'; // To get token and potentially user key
+// client/components/FileList.jsx
+import React, { useState, useEffect } from 'react';
+import { useAuth } from '../context/AuthContext'; // Import useAuth
 
-// --- Wasm Memory/Data Helpers (Copied from FileUpload for consistency) ---
+// --- Wasm Memory/Data Helpers ---
 const passBufferToWasm = (Module, jsBuffer) => {
-    const data = (jsBuffer instanceof Uint8Array) ? jsBuffer : new Uint8Array(jsBuffer);
-    const bufferPtr = Module._malloc(data.length);
-    if (!bufferPtr) throw new Error(`Wasm malloc failed for size ${data.length}`);
-    Module.HEAPU8.set(data, bufferPtr);
-    return bufferPtr;
+  const data = (jsBuffer instanceof Uint8Array) ? jsBuffer : new Uint8Array(jsBuffer);
+  const bufferPtr = Module._malloc(data.length);
+  if (!bufferPtr) throw new Error(`Wasm malloc failed for size ${data.length}`);
+  Module.HEAPU8.set(data, bufferPtr);
+  return bufferPtr;
 };
 
 const getBufferFromWasm = (Module, bufferPtr, bufferLen) => {
-    if (!bufferPtr || bufferLen <= 0) return new Uint8Array(0);
-    return Module.HEAPU8.slice(bufferPtr, bufferPtr + bufferLen);
+  if (!bufferPtr || bufferLen <= 0) return new Uint8Array(0);
+  return Module.HEAPU8.slice(bufferPtr, bufferPtr + bufferLen);
 };
 
-// Helper to convert Base64 string to Uint8Array (Browser)
 const base64ToUint8Array = (base64) => {
     try {
+        // Add checks for null/undefined/non-string input
+        if (base64 === null || typeof base64 === 'undefined') throw new Error("Input is null or undefined.");
+        if (typeof base64 !== 'string') throw new Error(`Input must be a string, got ${typeof base64}`);
+
         const binaryString = window.atob(base64);
         const len = binaryString.length;
         const bytes = new Uint8Array(len);
@@ -28,163 +31,209 @@ const base64ToUint8Array = (base64) => {
         return bytes;
     } catch (e) {
         console.error("Error decoding base64:", e);
-        throw new Error("Failed to decode base64 data.");
+        // Re-throw original error
+        throw e;
     }
 };
 
-// Helper to convert Uint8Array back to String (assuming UTF-8)
 const uint8ArrayToString = (buffer) => {
-    try {
-        return new TextDecoder().decode(buffer); // Default is utf-8
-    } catch (e) {
-        console.error("Error decoding buffer to string:", e);
-        return "Error decoding content.";
-    }
+  try {
+    return new TextDecoder().decode(buffer); // Default is utf-8
+  } catch (e) {
+    console.error("Error decoding buffer to string:", e);
+    // Return a placeholder or indication of binary for the preview
+    return "[Binary data - Use Download button]";
+  }
+};
+
+const uint8ArrayToHex = (buffer) => {
+    return Array.from(buffer)
+      .map(b => b.toString(16).padStart(2, '0'))
+      .join('');
 };
 // --- End Helpers ---
 
+// --- NEW HELPER: Extract Base Filename ---
+const getBaseFilename = (encryptedFilename) => {
+    if (!encryptedFilename) return "downloaded_file";
+    // Remove .enc extension first
+    let name = encryptedFilename.endsWith('.enc')
+               ? encryptedFilename.slice(0, -4)
+               : encryptedFilename;
+    // Try to remove recipient ID pattern (.email@domain) before the (now removed) .enc
+    // This regex looks for a dot followed by something with '@' up to the end
+    const emailPattern = /\.[^.]+@[^.]+(\.[^.]+)*$/;
+    name = name.replace(emailPattern, '');
+    // Fallback if pattern fails somehow
+    return name || "decrypted_file";
+};
+// --- END NEW HELPER ---
+
 
 const FileList = ({ files = [], wasmModule, publicParamsBuffer }) => {
-  const { token, user } = useAuth(); // Get token for API calls and user info
-  // *** IMPORTANT: Assume useAuth() provides the key buffer ***
-  // Replace this with how you actually access the securely stored key buffer
-  const recipientPrivateKeyBuffer = user?.privateKeyBuffer || null; // EXAMPLE ACCESS - NEEDS IMPLEMENTATION
+  const {
+    user,
+    privateKey,
+    isLoadingKey,
+    keyError,
+    apiClient
+  } = useAuth();
 
-  const [selectedFile, setSelectedFile] = useState(null); // Store details of file being viewed
+  const [selectedFile, setSelectedFile] = useState(null);
   const [decryptionStatus, setDecryptionStatus] = useState("");
-  const [decryptedContent, setDecryptedContent] = useState("");
-  const [verificationResult, setVerificationResult] = useState(""); // "VALID", "INVALID", "ERROR", ""
+  const [decryptedContent, setDecryptedContent] = useState(""); // For text preview
+  const [decryptedBuffer, setDecryptedBuffer] = useState(null); // <-- Store raw buffer
+  const [decryptedFilename, setDecryptedFilename] = useState(""); // <-- Store base filename
+  const [verificationResult, setVerificationResult] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
 
-  const handleDecryptAndVerify = async (documentId, senderId, originalFileName) => {
-    if (!wasmModule || !recipientPrivateKeyBuffer || !publicParamsBuffer || !token) {
-        alert("Error: Missing required components for decryption (Wasm module, private key, public params, or auth token).");
-        console.error("Missing prerequisites:", { wasmModule, recipientPrivateKeyBuffer, publicParamsBuffer, token });
-        return;
-    }
-    if (!documentId || !senderId) {
-        alert("Error: Missing document ID or sender ID.");
-        return;
-    }
 
+  useEffect(() => {
+      if(keyError) {
+          console.warn("FileList: AuthContext reported an error loading the private key:", keyError);
+      }
+  }, [keyError]);
+
+
+  const handleDecryptAndVerify = async (documentId, senderId, originalFileName) => {
     setIsProcessing(true);
-    setSelectedFile({ id: documentId, name: originalFileName }); // Show which file is processing
-    setDecryptionStatus(`Fetching ${originalFileName}...`);
+    setSelectedFile({ id: documentId, name: originalFileName });
+    setDecryptionStatus(`Preparing for ${originalFileName}...`);
     setDecryptedContent("");
     setVerificationResult("");
+    setDecryptedBuffer(null); // Clear previous buffer
+    setDecryptedFilename(""); // Clear previous filename
 
-    // --- Wasm Memory Pointers ---
-    let wasmPrivKeyPtr = null;
-    let wasmUPtr = null;
-    let wasmVPtr = null;
-    let wasmDecPtr = null;
-    let wasmDecLenPtr = null;
-    let wasmPubParamsPtr = null;
-    let wasmSenderIdPtr = null;
-    let wasmMsgDataPtr = null;
-    let wasmSigDataPtr = null;
-    // --- End Wasm Memory Pointers ---
+    // --- 1. Prerequisites Check --- (Keep these)
+    if (isLoadingKey) { alert("Your private key is still loading..."); setIsProcessing(false); return; }
+    if (keyError) { alert(`Key Error: ${keyError}`); setIsProcessing(false); return; }
+    if (!privateKey) { alert("Private key not available."); setIsProcessing(false); return; }
+    if (!wasmModule || !publicParamsBuffer) { alert("Wasm/Params not ready."); setIsProcessing(false); return; }
+    if (!documentId || !senderId) { alert("Missing document/sender ID."); setIsProcessing(false); return; }
+    // --- End Prerequisites Check ---
+
+    // --- Wasm Memory Pointers --- (Keep these)
+    let wasmPrivKeyPtr = null, wasmCiphertextPtr = null, wasmDecPtr = null;
+    let wasmDecLenPtr = null, wasmSigLenPtr = null, wasmPubParamsPtr = null;
+    let wasmSenderIdPtr = null, wasmMsgDataPtr = null, wasmSigDataPtr = null;
+    // --- End Wasm Pointers ---
 
     try {
-        // 1. Fetch encrypted data + metadata from backend
-        const config = { headers: { 'Authorization': `Bearer ${token}` } };
-        const response = await axios.get(`http://localhost:5006/api/files/download-encrypted/${documentId}`, config);
-        const { encryptedDataB64 } = response.data; // Assuming senderId is already available
+        // --- 2. Decode Private Key --- (Keep as is)
+        setDecryptionStatus("Decoding private key...");
+        let recipientPrivateKeyBuffer = base64ToUint8Array(privateKey);
+        console.log("Private key decoded for decryption (length):", recipientPrivateKeyBuffer.length);
 
-        if (!encryptedDataB64) throw new Error("Encrypted data not found in server response.");
-
-        setDecryptionStatus("Decoding data...");
-        const encryptedUint8Array = base64ToUint8Array(encryptedDataB64);
-
-        // 2. Determine U length & Split U||V
-        // WARNING: Using hardcoded length 65 based on previous tests. Fragile!
-        // Replace this if U length is stored in DB or returned by backend.
-        const uLen = 65;
-        console.log(`Using assumed U length: ${uLen}`);
-        if (uLen <= 0 || uLen >= encryptedUint8Array.length) {
-            throw new Error(`Invalid calculated U length: ${uLen}`);
+        // 3. Fetch encrypted data (Backend provides only encryptedDataB64)
+        setDecryptionStatus(`Workspaceing ${originalFileName}...`);
+        const response = await apiClient.get(`/files/download-encrypted/${documentId}`);
+        const { encryptedDataB64 } = response.data; // Expecting only this
+        if (!encryptedDataB64) {
+            throw new Error("Encrypted data not found in server response.");
         }
-        const vLen = encryptedUint8Array.length - uLen;
-        const uData = encryptedUint8Array.slice(0, uLen);
-        const vData = encryptedUint8Array.slice(uLen);
-        console.log(`Split ciphertext: U len=${uLen}, V len=${vLen}`);
 
-        // 3. Prepare data for Wasm decryption
-        setDecryptionStatus("Preparing data for Wasm...");
-        wasmDecLenPtr = wasmModule._malloc(4);
-        if (!wasmDecLenPtr) throw new Error("Malloc failed for output length pointer");
+        setDecryptionStatus("Decoding encrypted data...");
+        const encryptedUint8Array = base64ToUint8Array(encryptedDataB64);
+        const ciphertext_len = encryptedUint8Array.length;
+
+        // Log received/decoded ciphertext hex for comparison
+        console.log("DEBUG FileList: RECEIVED/DECODED Ciphertext Hex (Start):", uint8ArrayToHex(encryptedUint8Array.slice(0, 20)));
+        console.log("DEBUG FileList: RECEIVED/DECODED Ciphertext Hex (End):", uint8ArrayToHex(encryptedUint8Array.slice(-20)));
+
+        // --- REMOVED U/V split in JS --- (Keep removed)
+
+        // 5. Prepare data for Wasm decryption
+        setDecryptionStatus("Preparing data for Wasm decryption...");
+        wasmDecLenPtr = wasmModule._malloc(4); // For output plaintext len
+        wasmSigLenPtr = wasmModule._malloc(4); // For output signature len
+        if (!wasmDecLenPtr || !wasmSigLenPtr) throw new Error("Malloc failed for output length pointers");
 
         wasmPrivKeyPtr = passBufferToWasm(wasmModule, recipientPrivateKeyBuffer);
-        wasmUPtr = passBufferToWasm(wasmModule, uData);
-        wasmVPtr = passBufferToWasm(wasmModule, vData);
+        wasmCiphertextPtr = passBufferToWasm(wasmModule, encryptedUint8Array); // Pass combined ciphertext
 
-        // 4. Call Wasm Decrypt
+        console.log(`DEBUG Verify: publicParamsBuffer length: ${publicParamsBuffer?.length}`);
+
+        // 6. Call Wasm Decrypt (Signature requires NO uLength input)
         setDecryptionStatus("Decrypting...");
-        console.log("Calling wasm_decrypt_buffer...");
+        console.log(`Calling updated wasm_decrypt_buffer...`);
         wasmDecPtr = wasmModule.ccall(
             'wasm_decrypt_buffer', 'number',
-            ['number', 'number', 'number', 'number', 'number', 'number', 'number'],
-            [wasmPrivKeyPtr, recipientPrivateKeyBuffer.length, wasmUPtr, uLen, wasmVPtr, vLen, wasmDecLenPtr]
+            ['number', 'number', 'number', 'number', 'number', 'number'], // Corrected arg types
+            [wasmPrivKeyPtr, recipientPrivateKeyBuffer.length, wasmCiphertextPtr, ciphertext_len, wasmDecLenPtr, wasmSigLenPtr] // Corrected args
         );
         if (!wasmDecPtr) throw new Error("Decryption failed: wasm_decrypt_buffer returned null.");
         const decLen = wasmModule.HEAPU32[wasmDecLenPtr / 4];
-        console.log(`Decryption successful. Plaintext (Msg||Sig) length: ${decLen}`);
+        const actualSigLen = wasmModule.HEAPU32[wasmSigLenPtr / 4];
+        console.log(`Decryption successful. Plaintext (Msg||Sig) length: ${decLen}, Signature part length: ${actualSigLen}`);
+        if (actualSigLen <= 0 || actualSigLen > decLen) {
+            throw new Error(`Invalid Signature length returned by WASM: ${actualSigLen}`);
+        }
         const decryptedUint8Array = getBufferFromWasm(wasmModule, wasmDecPtr, decLen);
 
-        // 5. Split Plaintext (Message || Signature)
-        // WARNING: Using hardcoded length 65 based on previous tests. Fragile!
-        const sigLenExpected = 65;
-        console.log(`Using assumed signature length: ${sigLenExpected}`);
-         if (sigLenExpected <= 0 || sigLenExpected > decLen) {
-            throw new Error(`Invalid calculated Signature length: ${sigLenExpected}`);
-        }
-        const msgLen = decLen - sigLenExpected;
-        const messageData = decryptedUint8Array.slice(0, msgLen);
+        // 7. Split Plaintext using actualSigLen (Keep as is)
+        const msgLen = decLen - actualSigLen;
+        if (msgLen < 0) { throw new Error(`Calculated message length negative.`); }
+        const messageData = decryptedUint8Array.slice(0, msgLen); // Raw message bytes
         const signatureData = decryptedUint8Array.slice(msgLen);
-        console.log(`Split plaintext: Msg len=${msgLen}, Sig len=${sigLenExpected}`);
+        console.log(`Split plaintext: Msg len=${msgLen}, Sig len=${actualSigLen}`);
 
-        // 6. Prepare data for Wasm verification
+        // 8. Prepare data for Wasm verification (Keep as is)
         setDecryptionStatus("Preparing data for verification...");
         wasmPubParamsPtr = passBufferToWasm(wasmModule, publicParamsBuffer);
         wasmSenderIdPtr = passBufferToWasm(wasmModule, new TextEncoder().encode(senderId + '\0'));
         wasmMsgDataPtr = passBufferToWasm(wasmModule, messageData);
         wasmSigDataPtr = passBufferToWasm(wasmModule, signatureData);
 
-        // 7. Call Wasm Verify
+        // 9. Call Wasm Verify (Keep as is)
         setDecryptionStatus("Verifying signature...");
-        console.log("Calling wasm_verify_buffer...");
+        console.log(`DEBUG Verify: Verifying with Sender ID: ${senderId}, Msg Len: ${messageData.length}, Sig Len: ${signatureData.length}`);
         const verifyResult = wasmModule.ccall(
-            'wasm_verify_buffer', 'number',
-            ['number', 'number', 'number', 'number', 'number', 'number', 'number'],
-            [wasmPubParamsPtr, publicParamsBuffer.length, wasmSenderIdPtr, wasmMsgDataPtr, messageData.length, wasmSigDataPtr, signatureData.length]
+          'wasm_verify_buffer', 'number',
+          // Args: pubParamsData, pubParamsLen, signerIdStr, msgData, msgLen, sigData, sigLen
+          ['number', 'number', 'number', 'number', 'number', 'number', 'number'],
+          [wasmPubParamsPtr, publicParamsBuffer.length, wasmSenderIdPtr, wasmMsgDataPtr, messageData.length, wasmSigDataPtr, signatureData.length] // Pass correct args
         );
-
-        // 8. Display results
-        if (verifyResult === 0) {
+        // 10. Display results (Correct Logic - Use this from now on)
+        if (verifyResult === 0) { // Check for 0 (VALID)
             setVerificationResult("VALID");
             console.log("Verification VALID.");
-            setDecryptedContent(uint8ArrayToString(messageData)); // Decode message
+            // --- Store raw buffer and filename, try text decode ---
+            setDecryptedBuffer(messageData); // Store the Uint8Array
+            const baseFilename = getBaseFilename(originalFileName);
+            setDecryptedFilename(baseFilename);
+            setDecryptedContent(uint8ArrayToString(messageData)); // Attempt text decode for preview
+            // --- End store ---
             setDecryptionStatus("Decryption and Verification Successful!");
-        } else if (verifyResult === 1) {
+        } else if (verifyResult === 1) { // Check for 1 (INVALID)
             setVerificationResult("INVALID");
             console.warn("Verification INVALID.");
             setDecryptionStatus("Decryption successful, but signature verification FAILED!");
             setDecryptedContent("Cannot display content: Invalid Signature");
-        } else {
-            throw new Error(`Verification failed with error code: ${verifyResult}`);
+            // Clear buffer/filename if verification fails
+            setDecryptedBuffer(null);
+            setDecryptedFilename("");
+        } else { // Handle -1 or other unexpected codes as errors
+             console.error(`Verification function returned error code: ${verifyResult}`);
+             setVerificationResult("ERROR");
+             setDecryptionStatus(`Verification failed with error code: ${verifyResult}`);
+             setDecryptedBuffer(null);
+             setDecryptedFilename("");
         }
 
     } catch (error) {
         console.error("Decryption/Verification failed:", error);
-        setDecryptionStatus(`Error: ${error.message || 'Decryption/Verification failed!'}`);
+        const errorMsg = error.message || 'Decryption/Verification failed!';
+        setDecryptionStatus(`Error: ${errorMsg}`);
         setVerificationResult("ERROR");
+        setDecryptedBuffer(null); // Clear buffer/filename on error
+        setDecryptedFilename("");
     } finally {
-        // 9. Cleanup Wasm Memory
+        // 11. Cleanup Wasm Memory (Keep as is, ensure all ptrs freed)
         console.log("Cleaning up Wasm memory...");
+        if (wasmSigLenPtr) wasmModule._free(wasmSigLenPtr);
         if (wasmDecPtr) wasmModule.ccall('wasm_free_buffer', null, ['number'], [wasmDecPtr]);
         if (wasmPrivKeyPtr) wasmModule._free(wasmPrivKeyPtr);
-        if (wasmUPtr) wasmModule._free(wasmUPtr);
-        if (wasmVPtr) wasmModule._free(wasmVPtr);
+        if (wasmCiphertextPtr) wasmModule._free(wasmCiphertextPtr);
         if (wasmDecLenPtr) wasmModule._free(wasmDecLenPtr);
         if (wasmPubParamsPtr) wasmModule._free(wasmPubParamsPtr);
         if (wasmSenderIdPtr) wasmModule._free(wasmSenderIdPtr);
@@ -194,69 +243,115 @@ const FileList = ({ files = [], wasmModule, publicParamsBuffer }) => {
     }
   };
 
+  // --- Download Handler (Add this function) ---
+  const handleDownloadDecrypted = () => {
+      if (!decryptedBuffer || !decryptedFilename) {
+          console.error("Download clicked but decrypted data/filename not available.");
+          alert("Decrypted data is not ready for download."); // User feedback
+          return;
+      }
+      try {
+          const blob = new Blob([decryptedBuffer], { type: 'application/octet-stream' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = decryptedFilename; // Use the extracted filename
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+          console.log(`Download initiated for: ${decryptedFilename}`);
+      } catch (error) {
+          console.error("Error creating download link:", error);
+          alert("Failed to initiate download.");
+      }
+  };
+  // --- End Download Handler ---
 
   // --- Render Logic ---
+  const isDecryptDisabledGlobally = isLoadingKey || !!keyError || !privateKey;
+
   if (!files || files.length === 0) {
-    return 
-    (
-    <p className="text-gray-600">You have not received any documents yet.</p>
-  );}
+    return <p className="text-gray-600">You have not received any documents yet.</p>;
+  }
 
   return (
     <div className="space-y-4">
-      {/* File List Table */}
-      <div className="overflow-x-auto bg-white rounded-lg shadow">
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50">
-            <tr>
-              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Filename</th>
-              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Sender</th>
-              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Received</th>
-              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="bg-white divide-y divide-gray-200">
-            {files.map((file) => (
-              <tr key={file._id}>
-                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{file.originalFileName}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{file.senderId}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{new Date(file.createdAt).toLocaleString()}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                  <button
-                    onClick={() => handleDecryptAndVerify(file._id, file.senderId, file.originalFileName)}
-                    disabled={isProcessing && selectedFile?.id === file._id} // Disable button for the file being processed
-                    className={`text-indigo-600 hover:text-indigo-900 disabled:text-gray-400 disabled:cursor-not-allowed`}
-                  >
-                    {(isProcessing && selectedFile?.id === file._id) ? 'Processing...' : 'Decrypt & View'}
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+       {/* Optional key status display */}
+       {isLoadingKey && <p className="text-blue-600">Loading private key...</p>}
+       {keyError && <p className="text-red-600 font-semibold">Key Error: {keyError}. Decryption disabled.</p>}
+       {!isLoadingKey && !privateKey && !keyError && <p className="text-orange-600">Private key not yet available.</p>}
 
-      {/* Decryption/Verification Results Area */}
+       {/* File List Table (Sender/Date should be displayed here) */}
+       <div className="overflow-x-auto bg-white rounded-lg shadow">
+           <table className="min-w-full divide-y divide-gray-200">
+               <thead className="bg-gray-50">
+                   <tr>
+                       <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Filename</th>
+                       <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Sender</th>
+                       <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Received</th>
+                       <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                   </tr>
+               </thead>
+               <tbody className="bg-white divide-y divide-gray-200">
+                   {files.map((file) => (
+                        <tr key={file._id}>
+                        {/* --- MODIFIED TD --- */}
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900" title={file.originalFileName}>
+                            {getBaseFilename(file.originalFileName)}
+                        </td>
+                        {/* --- END MODIFIED TD --- */}
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{file.senderId}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{new Date(file.createdAt).toLocaleString()}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                               <button
+                                   onClick={() => handleDecryptAndVerify(file._id, file.senderId, file.originalFileName)}
+                                   disabled={isDecryptDisabledGlobally || (isProcessing && selectedFile?.id === file._id)}
+                                   className={`text-indigo-600 hover:text-indigo-900 disabled:text-gray-400 disabled:cursor-not-allowed`}
+                                   title={isDecryptDisabledGlobally ? (keyError || "Private key not available or loading...") : ""}
+                               >
+                                   {(isProcessing && selectedFile?.id === file._id) ? 'Processing...' : 'Decrypt & Verify'} {/* Changed text slightly */}
+                               </button>
+                           </td>
+                      </tr>
+
+
+
+                   ))}
+               </tbody>
+           </table>
+       </div>
+
+      {/* Decryption/Verification Results Area (Simplified) */}
       {selectedFile && (
         <div className="mt-6 p-4 border rounded-lg bg-gray-50">
-          <h3 className="text-lg font-semibold mb-2">Document Viewer: {selectedFile.name}</h3>
+          <h3 className="text-lg font-semibold mb-2">Processing Result: {selectedFile.name}</h3>
           <p className="text-sm mb-2">Status: <span className="font-medium">{decryptionStatus}</span></p>
           {verificationResult && (
-             <p className={`text-sm mb-2 font-medium ${
-                verificationResult === 'VALID' ? 'text-green-600' : 'text-red-600'
-             }`}>
+             <p className={`text-sm mb-2 font-medium ${ verificationResult === 'VALID' ? 'text-green-600' : 'text-red-600' }`}>
                 Signature Verification: {verificationResult}
             </p>
           )}
-          {decryptedContent && verificationResult === 'VALID' && (
-            <div className="mt-2 p-2 border bg-white rounded">
-              <h4 className="text-sm font-medium mb-1">Decrypted Content:</h4>
-              {/* Display as preformatted text, handle potential non-text content appropriately later */}
-              <pre className="text-xs whitespace-pre-wrap break-words">{decryptedContent}</pre>
-            </div>
+
+          {/* Download Button */}
+          {verificationResult === 'VALID' && decryptedBuffer && (
+              <button
+                  onClick={handleDownloadDecrypted}
+                  className="my-2 px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 text-sm"
+              >
+                  Download Decrypted File ({decryptedFilename})
+              </button>
           )}
-           {decryptedContent && verificationResult !== 'VALID' && verificationResult !== 'ERROR' && (
-               <p className="text-sm text-red-600">{decryptedContent}</p> // Show error message if verification failed
+
+           {/* REMOVED Text Preview Section */}
+
+           {/* Verification Failed Message */}
+           {verificationResult === 'INVALID' && (
+               <p className="text-sm text-red-600">Cannot download file: Invalid Signature.</p>
+           )}
+           {/* Optional: Show generic error if verificationResult === 'ERROR' */}
+           {verificationResult === 'ERROR' && (
+               <p className="text-sm text-red-600">An error occurred during the process. Cannot download file.</p>
            )}
         </div>
       )}
@@ -265,4 +360,3 @@ const FileList = ({ files = [], wasmModule, publicParamsBuffer }) => {
 };
 
 export default FileList;
-

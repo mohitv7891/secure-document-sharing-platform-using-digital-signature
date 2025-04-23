@@ -1,5 +1,3 @@
-// OR if your Routes are directly in App.jsx:
-/* === File: src/App.jsx === */
  import React from 'react';
  import { Routes, Route } from 'react-router-dom';
  import { AuthProvider } from './context/AuthContext'; // Import here if wrapping Routes
@@ -7,8 +5,8 @@
  import Register from './pages/Register';
  import Dashboard from './pages/Dashboard';
  import Navbar from './components/Navbar';
+ import ProtectedRoute from './components/ProtectedRoute';
  import Home from './pages/Home';
-// // ... other imports
 
  function App() {
    return (
@@ -17,9 +15,16 @@
        <Route path="/" element={<Home />} />
          <Route path="/login" element={<Login />} />
          <Route path="/register" element={<Register />} />
-        {/* Add ProtectedRoute component later if needed */}
-        <Route path="/dashboard" element={<Dashboard />} />
-        {/* ... other routes */}
+         <Route
+           path="/dashboard"
+           element={
+             <ProtectedRoute> 
+               <Navbar />
+               <Dashboard />
+             </ProtectedRoute>
+           }
+         />
+        {/* <Route path="*" element={<NotFound />} />   */}
       </Routes>
      </AuthProvider>
    );

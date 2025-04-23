@@ -1,4 +1,5 @@
 const Document = require("../models/Document");
+const mongoose = require('mongoose'); 
 
 
 // --- uploadEncryptedFile function (from previous step - ensure senderId uses req.user.id or req.user.email consistently) ---
@@ -18,6 +19,13 @@ const uploadEncryptedFile = async (req, res) => {
              return res.status(400).json({ message: "Recipient ID and filename are required." });
         }
         console.log(`Sender ID being saved: ${senderId} (Type: ${typeof senderId})`); // Log what's saved
+
+        if (req.file?.buffer) {
+            console.log(`DEBUG uploadEncryptedFile: req.file.buffer type: ${typeof req.file.buffer}, instanceof Buffer: ${req.file.buffer instanceof Buffer}, length: ${req.file.buffer.length}`);
+        } else {
+            console.error(`CRITICAL uploadEncryptedFile: req.file.buffer is missing before save!`);
+            return res.status(500).json({ message: "Server error: Upload buffer missing before save." });
+        }
 
         const newDocument = new Document({
             originalFileName: originalFileName,
@@ -63,11 +71,81 @@ const getReceivedFiles = async (req, res) => {
     }
 };
 
+// --- downloadEncryptedFile function ---
 
+const downloadEncryptedFile = async (req, res) => {
+    console.log("--- Enter downloadEncryptedFile Controller ---");
+    const documentId = req.params.id; // Keep ID definition outside for catch block
 
+    // --- Define userEmail OUTSIDE the try block ---
+    const userEmail = req.user?.email; // Get email from middleware result
+
+    try {
+        // 1. Check User Info (using variable defined above)
+        if (!userEmail) {
+            console.log("downloadEncryptedFile: User email not found on req.user.");
+            return res.status(403).json({ message: 'User identity not found in token.' });
+        }
+
+        // 2. Validate Document ID Format
+        if (!mongoose.Types.ObjectId.isValid(documentId)) {
+            console.log(`downloadEncryptedFile: Invalid document ID format received: ${documentId}`);
+            return res.status(400).json({ message: 'Invalid document ID format.' });
+        }
+        // This log should now work
+        console.log(`downloadEncryptedFile: Request for document ID: ${documentId} by user: ${userEmail}`);
+
+        // 3. Find the specific document by its ID
+        const document = await Document.findById(documentId);
+
+        // Check if document exists
+        if (!document) {
+            console.log(`downloadEncryptedFile: Document not found in DB for ID: ${documentId}`);
+            return res.status(404).json({ message: 'Document not found.' });
+        }
+
+        // 4. Authorization Check
+        if (document.recipientId !== userEmail) { // Uses userEmail defined outside
+             console.warn(`downloadEncryptedFile: Authorization FAILED. User ${userEmail} attempted to access document meant for ${document.recipientId}`);
+            return res.status(403).json({ message: 'Forbidden: You are not the recipient of this document.' });
+        }
+
+        // 5. Check if encrypted data exists AND is a Buffer
+        // Add the debug log right before the check for clarity
+        if (document.encryptedData) {
+             console.log(`DEBUG downloadEncryptedFile: document.encryptedData type: ${typeof document.encryptedData}, instanceof Buffer: ${document.encryptedData instanceof Buffer}, length: ${document.encryptedData?.length}`);
+        } else {
+             console.log(`DEBUG downloadEncryptedFile: document.encryptedData is null or undefined.`);
+        }
+
+        if (!document.encryptedData || !(document.encryptedData instanceof Buffer)) {
+             console.error(`downloadEncryptedFile: Encrypted data missing or invalid type check FAILED for document ID: ${documentId}`);
+            return res.status(500).json({ message: 'Server error: Encrypted data has invalid type.' });
+        }
+
+        // Prepare payload
+        console.log(`downloadEncryptedFile: Preparing Base64 payload for document ID: ${documentId}`);
+        const base64Data = document.encryptedData.toString('base64');
+        const responsePayload = {
+            encryptedDataB64: base64Data,
+        };
+        console.log(`downloadEncryptedFile: Payload ready. Sending 200 OK for document ID: ${documentId}`);
+
+        // Send response
+        res.status(200).json(responsePayload);
+
+    } catch (error) {
+        // Log error including documentId which is defined outside try
+        console.error(`❌ CAUGHT ERROR in downloadEncryptedFile for ID ${documentId}:`, error);
+        res.status(500).json({ message: "Server error while fetching encrypted file data." });
+    }
+};
+
+// --- End Download Controller ---
 
 // Export functions
 module.exports = {
     uploadEncryptedFile,
     getReceivedFiles,
+    downloadEncryptedFile,
 };
