@@ -73,6 +73,12 @@ const FileUpload = ({ wasmModule, publicParamsBuffer, onUploadSuccess }) => {
     // --- Input Checks ---
     if (!file) { setStatusMessage("Please select a file."); return; }
     if (!recipientId.trim()) { setStatusMessage("Please enter a recipient ID."); return; }
+    if (!recipientId.trim().toLowerCase().endsWith('@iiita.ac.in')) {
+      setStatusMessage("Error: Recipient must be a valid IIITA user");
+      return; // Stop processing
+  }
+
+
     if (!wasmModule) { setStatusMessage("Wasm module is not loaded yet."); return; }
     if (!publicParamsBuffer) { setStatusMessage("Public parameters are not loaded yet."); return; }
     // Check Key from Context

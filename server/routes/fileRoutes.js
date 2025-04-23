@@ -31,19 +31,15 @@ router.get(
     fileController.getReceivedFiles // Call the new controller function
 );
 
-// --- (Future Route) Route for Downloading a specific encrypted file ---
+// ---Route for Downloading a specific encrypted file ---
 // GET /api/files/download-encrypted/:id
-// router.get(
-//     '/download-encrypted/:id',
-//     fileController.downloadEncryptedFile // Controller function to be created later
-// );
-// --- Route for Downloading Encrypted File Data --- ADD/UNCOMMENT THIS ---
-// Handles GET requests like /api/files/download-encrypted/6802a171...
-
 router.get(
     '/download-encrypted/:id', // ':id' makes 'id' available as req.params.id
     authMiddleware,            // Protect this route - only logged-in users
     fileController.downloadEncryptedFile // Point to the new controller function
 );
+
+//GET /send 
+
 
 module.exports = router;
