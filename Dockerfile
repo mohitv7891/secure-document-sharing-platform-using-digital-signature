@@ -2,7 +2,7 @@
 
 # --- Base Image ---
     FROM node:22-bullseye
-
+    RUN uname -m
     # --- Install C Dependencies and Build Tools ---
     # Includes build-essential, libs for GMP/SSL, tools for downloading/building PBC
     RUN apt-get update && \
