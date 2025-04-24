@@ -41,34 +41,48 @@
         echo "Cleaning up PBC source..." && \
         rm -rf "${PBC_DOWNLOAD_PATH}" "${PBC_SOURCE_DIR}"
     
-    # --- Application Setup ---
+ # --- Application Setup ---
     WORKDIR /app
-    
+
     # --- Copy C Source Code (Your Project's Code) ---
     # Adjust the source path 'crypto-c/src' if yours is different
     COPY crypto-c/src /app/crypto-src/
     
     # --- Copy Native Parameters ---
+    # Copy params temporarily to the source dir first, they will be moved later
     # Adjust source path 'server/opt/crypto-native' if needed
     COPY server/opt/crypto-native/a.param /app/crypto-src/
     COPY server/opt/crypto-native/master_secret_key.dat /app/crypto-src/
     
+    # --- Create the target directory for the native executable and params FIRST ---
+    RUN mkdir -p /app/opt/crypto-native
+    
     # --- Compile YOUR keygen executable INSIDE Docker ---
-    # This runs AFTER PBC has been installed by the block above
-    RUN echo "Compiling keygen..." && \
-        gcc /app/crypto-src/keygen.c /app/crypto-src/ibe.c /app/crypto-src/bls_ibe_util.c \
-        -o /app/crypto-src/keygen \
-        -I/usr/local/include/pbc -L/usr/local/lib \
+    # Compile directly into the target directory and perform checks in one RUN command
+    RUN echo "Compiling keygen with verbose output..." && \
+        gcc -v \
+        /app/crypto-src/keygen.c \
+        /app/crypto-src/ibe.c \
+        /app/crypto-src/bls_ibe_util.c \
+        -o /app/opt/crypto-native/keygen \
+        -I/usr/local/include/pbc \
+        -L/usr/local/lib \
         -Wl,-rpath=/usr/local/lib \
         -lpbc -lgmp -lssl -lcrypto \
-        && echo "Keygen compilation successful."
+        && echo "Compilation complete." && \
+        echo "Setting execute permissions..." && \
+        chmod +x /app/opt/crypto-native/keygen && \
+        echo "Verifying binary type..." && \
+        file /app/opt/crypto-native/keygen && \
+        echo "Verifying dynamic library dependencies..." && \
+        ldd /app/opt/crypto-native/keygen
     
-    # --- Prepare final directory for native executable and params ---
-    RUN mkdir -p /app/opt/crypto-native && \
-        mv /app/crypto-src/keygen /app/opt/crypto-native/keygen && \
+    # --- Move Native Parameters to Final Location and Clean Up Source ---
+    # The keygen binary is already in the correct place.
+    RUN echo "Moving parameter files..." && \
         mv /app/crypto-src/a.param /app/opt/crypto-native/a.param && \
         mv /app/crypto-src/master_secret_key.dat /app/opt/crypto-native/master_secret_key.dat && \
-        chmod +x /app/opt/crypto-native/keygen && \
+        echo "Cleaning up C source directory..." && \
         rm -rf /app/crypto-src
     
     # --- Node.js App Setup ---
