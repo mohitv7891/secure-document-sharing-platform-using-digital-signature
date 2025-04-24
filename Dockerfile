@@ -19,7 +19,7 @@
     
     # --- Download, Build, and Install PBC from Source ---
     ENV PBC_VERSION=0.5.14
-    ENV PBC_TAR_URL=https://github.com/blynn/pbc/archive/refs/tags/v${PBC_VERSION}.tar.gz
+    ENV PBC_TAR_URL=https://crypto.stanford.edu/pbc/files/pbc-${PBC_VERSION}.tar.gz
     ENV PBC_DOWNLOAD_PATH=/tmp/pbc.tar.gz
     ENV PBC_EXTRACT_DIR=/tmp
     ENV PBC_SOURCE_DIR=/tmp/pbc-${PBC_VERSION}
