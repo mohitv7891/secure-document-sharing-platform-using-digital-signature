@@ -1,7 +1,7 @@
 // server/controllers/userController.js
 const fs = require('fs').promises;
 const path = require('path');
-const User = require('../models/user'); // Adjust path if needed
+const User = require('../models/User'); // Adjust path if needed
 
 // Read path from environment variables - MUST match where keys are saved
 const USER_KEYS_DIR = process.env.USER_KEYS_DIR;
