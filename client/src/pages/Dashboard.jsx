@@ -5,6 +5,8 @@ import FileUpload from "../components/FileUpload";
 import FileList from '../components/FileList'; // Assuming you have this component
 import { useAuth } from '../context/AuthContext'; // Import useAuth
 
+const API_BASE_URL = "https://secure-docs-api.onrender.com"
+
 const Dashboard = () => {
   // Existing Wasm state
   const [wasmModule, setWasmModule] = useState(null);
@@ -94,7 +96,7 @@ const Dashboard = () => {
           }
         };
         // Adjust endpoint URL if needed
-        const response = await axios.get('http://localhost:5006/api/files/received', config);
+        const response = await axios.get(`${API_BASE_URL}/api/files/received`, config);
         setReceivedFiles(response.data || []); // Ensure it's an array
         console.log("Received files fetched:", response.data);
       } catch (error) {
