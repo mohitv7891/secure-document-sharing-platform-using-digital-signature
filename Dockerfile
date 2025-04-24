@@ -12,14 +12,29 @@ FROM node:22-bullseye
 # Update package list, install essential C build tools and specific libraries, cleanup afterward
 # libssl-dev for crypto, libgmp-dev for large numbers, libpbc-dev for pairing-based crypto
 # ca-certificates allows Node.js to make secure HTTPS/TLS connections (e.g., to MongoDB Atlas, SMTP)
-RUN apt-get update && \
+
+# --- Install C Dependencies for keygen ---
+    RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     build-essential \
     libgmp-dev \
-    libpbc-dev \
     libssl-dev \
     ca-certificates \
+    curl \
+    tar \
+    file \
+    bison \      
+    flex \        
     && rm -rf /var/lib/apt/lists/*
+# --- Download and Install PBC ---
+    ENV PBC_VERSION=0.5.14
+    # Remove the 'v' prefix from the URL
+    ENV PBC_TAR_URL=https://github.com/blynn/pbc/archive/refs/tags/${PBC_VERSION}.tar.gz
+    # Rest of the configuration remains the same
+    ENV PBC_DOWNLOAD_PATH=/tmp/pbc.tar.gz
+    ENV PBC_EXTRACT_DIR=/tmp
+    ENV PBC_SOURCE_DIR=/tmp/pbc-${PBC_VERSION}
+    
 
 # --- Application Setup ---
 # Set the working directory inside the container
