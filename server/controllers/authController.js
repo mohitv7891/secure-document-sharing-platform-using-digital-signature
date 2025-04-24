@@ -4,7 +4,7 @@ const jwt = require('jsonwebtoken');
 const { validationResult } = require('express-validator');
 const crypto = require('crypto'); // For OTP generation
 
-const User = require('../models/user'); // Your existing User model
+const User = require('../models/User'); // Your existing User model
 const PendingRegistration = require('../models/PendingRegistration'); // Import the new model
 const executeKeygen = require('../utils/executeKeygen'); // Still needed later
 const sendEmail = require('../utils/sendEmail'); // Import the email utility
