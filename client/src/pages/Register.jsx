@@ -70,7 +70,7 @@ const Register = () => {
       const body = JSON.stringify({ name, email, password });
 
       // Call the NEW initiate endpoint
-      const res = await axios.post(`${API_BASE_URL}/initiate-registration`, body, config);
+      const res = await axios.post(`${API_BASE_URL}/api/auth/initiate-registration`, body, config);
 
       // Success: Move to OTP stage
       setMessage(res.data.message || 'OTP Sent! Check your email.'); // Show success message from backend
@@ -109,7 +109,7 @@ const Register = () => {
       const body = JSON.stringify({ email: submittedEmail, otp });
 
       // Call the NEW verify endpoint
-      const res = await axios.post(`${API_BASE_URL}/verify-registration`, body, config);
+      const res = await axios.post(`${API_BASE_URL}/api/auth/verify-registration`, body, config);
 
       // Success: Registration Complete
       setMessage(res.data.message || 'Registration successful!'); // Show success message
