@@ -41,8 +41,8 @@ FROM node:22-bullseye
 WORKDIR /app
 
 # --- Copy C Source Code FIRST ---
-# Adjust the source path 'server/crypto-c/src' if yours is different
-COPY server/crypto-c/src /app/crypto-src/
+# Adjust the source path 'crypto-c/src' if yours is different
+COPY crypto-c/src /app/crypto-src/
 
 # --- Copy Native Parameters ---
 # Adjust source path 'server/opt/crypto-native' if needed
