@@ -40,42 +40,55 @@ FROM node:22-bullseye
 # Set the working directory inside the container
 WORKDIR /app
 
-# Copy package.json and package-lock.json from the server directory first
-# This leverages Docker layer caching - dependencies only reinstall if these files change
+# --- Copy C Source Code FIRST ---
+# Adjust the source path 'server/crypto-c/src' if yours is different
+COPY server/crypto-c/src /app/crypto-src/
+
+# --- Copy Native Parameters ---
+# Adjust source path 'server/opt/crypto-native' if needed
+# Ensure these are copied relative to the WORKDIR /app
+COPY server/opt/crypto-native/a.param /app/crypto-src/
+COPY server/opt/crypto-native/master_secret_key.dat /app/crypto-src/
+
+# --- Compile keygen INSIDE Docker ---
+# Adjust source files (keygen.c etc.) and paths if necessary
+# Add include/lib paths for PBC/GMP if they were installed to /usr/local
+# -Wl,-rpath tells the linker where to find shared libs at runtime
+RUN echo "Compiling keygen..." && \
+    gcc /app/crypto-src/keygen.c /app/crypto-src/ibe.c /app/crypto-src/bls_ibe_util.c \
+    -o /app/crypto-src/keygen \
+    -I/usr/local/include/pbc -L/usr/local/lib \
+    -Wl,-rpath=/usr/local/lib \
+    -lpbc -lgmp -lssl -lcrypto \
+    && echo "Compilation successful."
+
+# --- Prepare final directory for native executable and params ---
+RUN mkdir -p /app/opt/crypto-native && \
+    # Move the compiled executable
+    mv /app/crypto-src/keygen /app/opt/crypto-native/keygen && \
+    # Move the parameters
+    mv /app/crypto-src/a.param /app/opt/crypto-native/a.param && \
+    mv /app/crypto-src/master_secret_key.dat /app/opt/crypto-native/master_secret_key.dat && \
+    # Make executable
+    chmod +x /app/opt/crypto-native/keygen && \
+    # Clean up source
+    rm -rf /app/crypto-src
+
+# --- Node.js App Setup ---
 COPY server/package*.json ./
-
-# Install Node.js dependencies for production
-# --omit=dev skips development dependencies, reducing image size
 RUN npm install --omit=dev
-
-# Copy the rest of the backend server code into the container's working directory
 COPY server/ ./
-
-# Copy the native crypto directory into the container
-# Ensure these files exist relative to the Dockerfile build context (project root)
-COPY server/opt/crypto-native ./opt/crypto-native
-
-# --- Permissions ---
-# Make the keygen executable runnable inside the container
-RUN chmod +x /app/opt/crypto-native/keygen
+# REMOVED: COPY server/opt/crypto-native ... (it's built/moved above now)
+# REMOVED: RUN chmod +x ... (done above now)
 
 # --- Environment Variables ---
-# Set Node environment to production
 ENV NODE_ENV=production
-# Set default port (Render can override this via its own PORT env var)
 ENV PORT=5006
-# Set paths for crypto operations *inside the container*
-# Your Node.js code (e.g., executeKeygen.js) MUST use these ENV vars
-ENV NATIVE_CRYPTO_DIR=/app/opt/crypto-native
-# USER_KEYS_DIR isn't used for storage, but executeKeygen might use it for temp path before deleting
-# Let's keep it pointing inside the native dir to avoid permission issues elsewhere
-# Keys are written & deleted here
-ENV USER_KEYS_DIR=/app/opt/crypto-native 
+ENV NATIVE_CRYPTO_DIR=/app/opt/crypto-native 
+ENV USER_KEYS_DIR=/app/opt/crypto-keys     
+# Create the key storage directory if it doesn't exist
+RUN mkdir -p ${USER_KEYS_DIR} && chmod 700 ${USER_KEYS_DIR} # Create and restrict permissions
 
-# --- Expose Port ---
-# Tell Docker the container listens on this port (must match ENV PORT if used)
+# --- Expose Port / Start Command ---
 EXPOSE 5006
-
-# --- Start Command ---
-# The command to run when the container starts
 CMD [ "node", "server.js" ]
