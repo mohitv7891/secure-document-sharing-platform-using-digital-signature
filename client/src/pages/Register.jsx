@@ -5,8 +5,8 @@ import { useNavigate, Link } from 'react-router-dom';
 import Navbar from "../components/Navbar"; // Assuming Navbar exists
 
 // Configure your API base URL centrally if possible
-const API_BASE_URL = 'http://localhost:5006/api/auth'; // Adjust if needed
-
+// const API_BASE_URL = 'https://secure-docs-api.onrender.com'; // Adjust if needed
+const API_BASE_URL="http://192.168.146.77:5006";
 const Register = () => {
   // State for different stages: 'enterDetails', 'enterOtp'
   const [stage, setStage] = useState('enterDetails');
@@ -70,7 +70,7 @@ const Register = () => {
       const body = JSON.stringify({ name, email, password });
 
       // Call the NEW initiate endpoint
-      const res = await axios.post(`${API_BASE_URL}/initiate-registration`, body, config);
+      const res = await axios.post(`${API_BASE_URL}/api/auth/initiate-registration`, body, config);
 
       // Success: Move to OTP stage
       setMessage(res.data.message || 'OTP Sent! Check your email.'); // Show success message from backend
@@ -109,7 +109,7 @@ const Register = () => {
       const body = JSON.stringify({ email: submittedEmail, otp });
 
       // Call the NEW verify endpoint
-      const res = await axios.post(`${API_BASE_URL}/verify-registration`, body, config);
+      const res = await axios.post(`${API_BASE_URL}/api/auth/verify-registration`, body, config);
 
       // Success: Registration Complete
       setMessage(res.data.message || 'Registration successful!'); // Show success message
