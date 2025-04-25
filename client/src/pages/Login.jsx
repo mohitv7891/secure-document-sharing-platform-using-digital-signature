@@ -5,7 +5,8 @@ import Navbar from "../components/Navbar";
 import { useAuth } from '../context/AuthContext'; // Import the useAuth hook
 
 // const API_BASE_URL = "https://secure-docs-api.onrender.com";
-const API_BASE_URL="http://192.168.146.77:5006";
+// const API_BASE_URL="http://192.168.146.77:5006";
+const API_BASE_URL = "http://192.168.69.77 :5006";
 const Login = () => {
   const [formData, setFormData] = useState({ email: '', password: '' });
   const [isLoading, setIsLoading] = useState(false);

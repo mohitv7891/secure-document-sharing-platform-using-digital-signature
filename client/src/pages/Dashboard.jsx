@@ -5,7 +5,8 @@ import FileUpload from "../components/FileUpload";
 import FileList from '../components/FileList'; // Assuming you have this component
 import { useAuth } from '../context/AuthContext'; // Import useAuth
 
-const API_BASE_URL = "http://192.168.146.77:5006";
+// const API_BASE_URL = "http://192.168.146.77:5006";
+const API_BASE_URL = "http://192.168.69.77 :5006";
 
 const Dashboard = () => {
   // Existing Wasm state
