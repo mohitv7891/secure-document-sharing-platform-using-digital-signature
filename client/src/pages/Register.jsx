@@ -5,8 +5,8 @@ import { useNavigate, Link } from 'react-router-dom';
 import Navbar from "../components/Navbar"; // Assuming Navbar exists
 
 // Configure your API base URL centrally if possible
-const API_BASE_URL = 'https://secure-docs-api.onrender.com'; // Adjust if needed
-
+// const API_BASE_URL = 'https://secure-docs-api.onrender.com'; // Adjust if needed
+const API_BASE_URL="http://192.168.146.77:5006";
 const Register = () => {
   // State for different stages: 'enterDetails', 'enterOtp'
   const [stage, setStage] = useState('enterDetails');

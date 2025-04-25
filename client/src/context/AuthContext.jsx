@@ -6,7 +6,7 @@ import axios from 'axios'; // Ensure installed: npm install axios
 // Create a base axios instance (optional but recommended)
 // Configure with your API base URL
 const apiClient = axios.create({
-    baseURL: 'https://secure-docs-api.onrender.com/api', // Adjust if your backend runs elsewhere
+    baseURL: 'http://192.168.146.77:5006/api', // Adjust if your backend runs elsewhere
 });
 
 // Interceptor to add JWT token to requests
