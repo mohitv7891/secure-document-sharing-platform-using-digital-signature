@@ -5,10 +5,11 @@ import FileUpload from "../components/FileUpload";
 import FileList from '../components/FileList'; // Assuming you have this component
 import { useAuth } from '../context/AuthContext'; // Import useAuth
 
-const API_BASE_URL = "http://localhost:5006";
+//const API_BASE_URL = "http://localhost:5006";
 //const API_BASE_URL = "http://192.168.69.77:5006";
 
 const Dashboard = () => {
+  const {apiClient } = useAuth(); // <-- Get apiClient
   // Existing Wasm state
   const [wasmModule, setWasmModule] = useState(null);
   const [isLoadingModule, setIsLoadingModule] = useState(true);
@@ -97,7 +98,8 @@ const Dashboard = () => {
           }
         };
         // Adjust endpoint URL if needed
-        const response = await axios.get(`${API_BASE_URL}/api/files/received`, config);
+        const response = await apiClient.get(`/files/received`, config);
+        // const response = await axios.get(`${API_BASE_URL}/api/files/received`, config);
         setReceivedFiles(response.data || []); // Ensure it's an array
         console.log("Received files fetched:", response.data);
       } catch (error) {

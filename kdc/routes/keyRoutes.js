@@ -9,7 +9,7 @@ const router = express.Router();
 // Requires server API key AND valid user JWT in body
 router.post(
     '/generate-key',
-    authenticateServer,    // First, verify the calling server
+    // authenticateServer,    // First, verify the calling server
     authenticateUserJwt,   // Second, verify the user's forwarded JWT
     keyController.generateKey // Finally, generate the key
 );

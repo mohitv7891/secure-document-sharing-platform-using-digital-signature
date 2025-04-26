@@ -1,21 +1,7 @@
 // kgs/middleware/kgsAuthMiddleware.js
 const jwt = require('jsonwebtoken');
 
-// Middleware 1: Authenticate the calling server (Main Server) via API Key
-const authenticateServer = (req, res, next) => {
-    console.log("KGS: authenticateServer middleware running...");
-    const receivedApiKey = req.header('X-KGS-API-Key');
-    const allowedKeys = (process.env.ALLOWED_API_KEYS || '').split(',');
-
-    if (!receivedApiKey || !allowedKeys.includes(receivedApiKey.trim())) {
-        console.warn("KGS: Server authentication failed - Invalid or missing API Key.");
-        return res.status(403).json({ message: 'Forbidden: Invalid server credentials.' });
-    }
-    console.log("KGS: Server authentication successful.");
-    next();
-};
-
-// Middleware 2: Authenticate the end-user via forwarded JWT
+// Middleware 1: Authenticate the end-user via forwarded JWT
 const authenticateUserJwt = (req, res, next) => {
      console.log("KGS: authenticateUserJwt middleware running...");
      const userJwt = req.body.userJwt; // Expect JWT in request body
@@ -49,4 +35,4 @@ const authenticateUserJwt = (req, res, next) => {
      }
 };
 
-module.exports = { authenticateServer, authenticateUserJwt };
+module.exports = {authenticateUserJwt };

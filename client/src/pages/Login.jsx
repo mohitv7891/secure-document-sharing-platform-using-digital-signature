@@ -35,7 +35,8 @@ const Login = () => {
       const config = { headers: { 'Content-Type': 'application/json' } };
       const body = JSON.stringify(userCredentials);
       // const res = await axios.post(`${API_BASE_URL}/api/auth/login`, body, config);
-      const res = await apiClient.post(`/auth/login`, body,config);
+      //const res = await apiClient.post(`/auth/login`, body,config);
+      const res = await apiClient.post('/auth/login', userCredentials);
 
       if (res.data.token) {
         // Use the login function from context instead of directly setting localStorage

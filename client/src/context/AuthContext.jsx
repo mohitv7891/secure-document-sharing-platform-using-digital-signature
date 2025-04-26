@@ -3,7 +3,8 @@ import React, { createContext, useState, useContext, useEffect, useCallback } fr
 import { jwtDecode } from 'jwt-decode'; // Ensure installed: npm install jwt-decode
 import axios from 'axios'; // Ensure installed: npm install axios
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5006/api';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://192.168.69.77:5006/api';
+const KDC_BASE_URL = import.meta.env.VITE_API_BASE_URL_KDC
 // Create a base axios instance (optional but recommended)
 // Configure with your API base URL
 const apiClient = axios.create({
@@ -48,7 +49,7 @@ export const AuthProvider = ({ children }) => {
     }, []);
 
     // --- Define fetchPrivateKey function SECOND (depends on logout) ---
-    const fetchPrivateKey = useCallback(async (currentToken) => {
+    const fetchPrivateKey = useCallback(async (currentToken,user) => {
         if (!currentToken) {
             console.log("fetchPrivateKey: No token available.");
             return; // No token, cannot fetch key
@@ -59,15 +60,27 @@ export const AuthProvider = ({ children }) => {
         setPrivateKey(null); // Clear previous key before fetching new one
 
         try {
-            // Use the pre-configured apiClient which includes the token via interceptor
-            // *** Path confirmed correct ***
-            const response = await apiClient.get('/users/my-private-key', {
-                 // Optionally pass the token explicitly if interceptor issues suspected
-                 // headers: { 'Authorization': `Bearer ${currentToken}` }
-            });
-
+            const kgsEndpoint = `${KDC_BASE_URL}/generate-key`; // Assuming KGS endpoint is /generate-key
+            console.log("user " + user);
+            const kgsRequestData = {
+                email: user, // Send email explicitly
+                userJwt: token  // Forward the user's JWT for KGS to verify
+            };
+    
+           //Call KGS endpoint
+            let response;
+            try {
+                 response = await axios.post(kgsEndpoint, kgsRequestData);
+            } catch (kgsError) {
+                 // Handle errors specifically from the KGS request
+                 console.error(`Error calling KGS endpoint (${kgsEndpoint}) for user ${user}:`, kgsError.response?.status, kgsError.response?.data || kgsError.message);
+                 const status = kgsError.response?.status || 500;
+                 const message = kgsError.response?.data?.message || 'Failed to communicate with Key Generation Service.';
+                 return response.status(status).json({ message }); // Relay KGS error status/message
+            }
+    
             if (response.status === 200) {
-                const base64PrivateKey = response.data;
+                const base64PrivateKey = response.data.privateKeyB64;
                 setPrivateKey(base64PrivateKey);
                 console.log('AuthContext: Private key fetched successfully.');
             } else {
@@ -107,8 +120,7 @@ export const AuthProvider = ({ children }) => {
         if (storedToken) {
             try {
                 const decodedUser = jwtDecode(storedToken);
-                const currentTime = Date.now() / 1000;
-
+                const currentTime = Date.now() / 1000; 
                 if (decodedUser.exp < currentTime) {
                     console.log("AuthContext InitialLoad: Token expired.");
                     // Use logout function for cleanup
@@ -118,7 +130,8 @@ export const AuthProvider = ({ children }) => {
                     setToken(storedToken);
                     setUser(decodedUser.user);
                     // Fetch the key since we have a valid token and user
-                    fetchPrivateKey(storedToken); // Call fetchPrivateKey on initial load
+                    // fetchPrivateKey(storedToken); // Call fetchPrivateKey on initial load
+                    fetchPrivateKey(storedToken, decodedUser.user);
                 }
             } catch (error) {
                 console.error("AuthContext InitialLoad: Error decoding token", error);
@@ -139,7 +152,7 @@ export const AuthProvider = ({ children }) => {
             setUser(decodedUser.user);
             console.log("AuthContext: User logged in", decodedUser.user);
             // --- Fetch private key immediately after login ---
-            await fetchPrivateKey(newToken);
+            await fetchPrivateKey(newToken,user);
             // --- Key fetching initiated ---
         } catch (error) {
             console.error("AuthContext: Error processing token on login", error);
