@@ -48,21 +48,4 @@ router.post(
     authController.loginUser
 );
 
-
-// --- Old Register Route ---
-/*
-// @route   POST api/auth/register
-// @desc    Register user (OLD - Replaced by initiate/verify)
-// @access  Public
-router.post(
-    '/register',
-    [
-        check('name', 'Name is optional').optional().isString(),
-        check('email', 'Please include a valid IIITA email').isEmail().normalizeEmail(),
-        check('password', 'Password must be 6 or more characters').isLength({ min: 6 }),
-    ],
-    authController.registerUser // Old controller function
-);
-*/
-
 module.exports = router;

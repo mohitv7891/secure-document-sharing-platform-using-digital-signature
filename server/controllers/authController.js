@@ -6,7 +6,7 @@ const crypto = require('crypto'); // For OTP generation
 
 const User = require('../models/User'); // Your existing User model
 const PendingRegistration = require('../models/PendingRegistration'); // Import the new model
-const executeKeygen = require('../utils/executeKeygen'); // Still needed later
+// const executeKeygen = require('../utils/executeKeygen'); // Still needed later
 const sendEmail = require('../utils/sendEmail'); // Import the email utility
 
 // Configuration (Keep JWT stuff, remove whitelist if not needed)
@@ -167,18 +167,6 @@ exports.verifyRegistration = async (req, res) => {
         console.log(`OTP verified successfully for ${lowerCaseEmail}`);
 
         // 4. Generate the user's private key
-        let privateKeyPath;
-        try {
-            console.log(`Generating private key for ${lowerCaseEmail}...`);
-            // Assuming executeKeygen handles its own errors and returns path or throws
-            privateKeyPath = await executeKeygen(lowerCaseEmail);
-            console.log(`Private key generated successfully for ${lowerCaseEmail} at ${privateKeyPath}`);
-        } catch (keygenError) {
-            console.error(`Key generation failed during verification for ${lowerCaseEmail}:`, keygenError);
-            // If key generation fails, we don't proceed but leave the pending record
-            // so the user might potentially retry verification if it was an intermittent issue.
-            return res.status(500).json({ message: 'Server error during key generation. Please try verifying the OTP again shortly.' });
-        }
 
         // 5. Create the final User record in the database
         try {
@@ -187,7 +175,7 @@ exports.verifyRegistration = async (req, res) => {
                  name: pendingDoc.name,               // Use name from pending doc
                  email: pendingDoc.email,             // Use email from pending doc
                  password: pendingDoc.hashedPassword, // Use the HASHED password from pending doc
-                 privateKeyPath: privateKeyPath       // Use the generated path
+                //  privateKeyPath: privateKeyPath       // Use the generated path
              });
              await newUser.save();
              console.log(`User record created successfully for ${lowerCaseEmail} with ID: ${newUser._id}`);

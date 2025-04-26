@@ -20,11 +20,12 @@ const userSchema = new mongoose.Schema({
   },
   // Store the path where the server saved the user's private key
   // This allows retrieval later if needed (e.g., for server-side crypto ops or secure download)
-  privateKeyPath: {
-    type: String,
-    required: true, // Key should be generated on registration
-    select: false, // Do not send path back by default
-  },
+  // as kdc
+  // privateKeyPath: {
+  //   type: String,
+  //   required: true, // Key should be generated on registration
+  //   select: false, // Do not send path back by default
+  // },
   createdAt: {
     type: Date,
     default: Date.now,

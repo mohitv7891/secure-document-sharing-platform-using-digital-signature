@@ -1,19 +1,16 @@
 import React, { useState, useContext } from 'react'; // Import useContext
-import axios from 'axios';
+// import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import Navbar from "../components/Navbar";
 import { useAuth } from '../context/AuthContext'; // Import the useAuth hook
 
-// const API_BASE_URL = "https://secure-docs-api.onrender.com";
-// const API_BASE_URL="http://192.168.146.77:5006";
-const API_BASE_URL = "http://192.168.69.77:5006";
+//const API_BASE_URL = "http://localhost:5006";
 const Login = () => {
   const [formData, setFormData] = useState({ email: '', password: '' });
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const navigate = useNavigate();
-  const { login } = useAuth(); // Get the login function from context
-
+  const { login, apiClient } = useAuth(); // <-- Get login and apiClient
   const { email, password } = formData;
 
   const onChange = (e) => {
@@ -37,7 +34,8 @@ const Login = () => {
     try {
       const config = { headers: { 'Content-Type': 'application/json' } };
       const body = JSON.stringify(userCredentials);
-      const res = await axios.post(`${API_BASE_URL}/api/auth/login`, body, config);
+      // const res = await axios.post(`${API_BASE_URL}/api/auth/login`, body, config);
+      const res = await apiClient.post(`/auth/login`, body,config);
 
       if (res.data.token) {
         // Use the login function from context instead of directly setting localStorage

@@ -3,11 +3,11 @@ import React, { createContext, useState, useContext, useEffect, useCallback } fr
 import { jwtDecode } from 'jwt-decode'; // Ensure installed: npm install jwt-decode
 import axios from 'axios'; // Ensure installed: npm install axios
 
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5006/api';
 // Create a base axios instance (optional but recommended)
 // Configure with your API base URL
 const apiClient = axios.create({
-    // baseURL: 'http://192.168.146.77:5006/api', // Adjust if your backend runs elsewhere
-    baseURL: 'http://192.168.69.77:5006/api', // Adjust if your backend runs elsewhere
+     baseURL: API_BASE_URL
 });
 
 // Interceptor to add JWT token to requests

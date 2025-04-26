@@ -1,28 +1,26 @@
 // client/pages/Register.jsx
 import React, { useState } from 'react';
-import axios from 'axios'; // Assuming you use axios
+// import axios from 'axios'; // Not needed directly
 import { useNavigate, Link } from 'react-router-dom';
-import Navbar from "../components/Navbar"; // Assuming Navbar exists
+import { useAuth } from '../context/AuthContext'; // <-- IMPORT useAuth
+import Navbar from "../components/Navbar";
 
-// Configure your API base URL centrally if possible
-// const API_BASE_URL = 'https://secure-docs-api.onrender.com'; // Adjust if needed
-// const API_BASE_URL="http://192.168.146.77:5006";
-const API_BASE_URL = "http://192.168.69.77:5006";
+// No API_BASE_URL needed here, apiClient has it
+
 const Register = () => {
+  const { apiClient } = useAuth(); // <-- CALL useAuth to get apiClient
+
   // State for different stages: 'enterDetails', 'enterOtp'
   const [stage, setStage] = useState('enterDetails');
-
   // Form data state
   const [formData, setFormData] = useState({ name: '', email: '', password: '' });
   const [otp, setOtp] = useState('');
-
   // State for tracking submitted email (needed for OTP verification)
   const [submittedEmail, setSubmittedEmail] = useState('');
-
   // UI feedback state
   const [isLoading, setIsLoading] = useState(false);
-  const [message, setMessage] = useState(''); // General messages (success/info)
-  const [errorMessage, setErrorMessage] = useState(''); // Error messages
+  const [message, setMessage] = useState('');
+  const [errorMessage, setErrorMessage] = useState('');
 
   const navigate = useNavigate();
 
@@ -41,8 +39,7 @@ const Register = () => {
     setMessage(''); // Clear messages on input change
     setErrorMessage('');
   };
-
-  // --- Handler for Step 1: Submitting Details to Initiate ---
+    // --- Handler for Step 1: Submitting Details to Initiate ---
   const handleSubmitDetails = async (e) => {
     e.preventDefault();
     setIsLoading(true);
@@ -64,72 +61,59 @@ const Register = () => {
         setIsLoading(false);
         return;
      }
-
-
+    
     try {
-      const config = { headers: { 'Content-Type': 'application/json' } };
-      const body = JSON.stringify({ name, email, password });
-
-      // Call the NEW initiate endpoint
-      const res = await axios.post(`${API_BASE_URL}/api/auth/initiate-registration`, body, config);
+      // const config = { headers: { 'Content-Type': 'application/json' } }; // Axios sets this for JSON body by default
+      const body = { name, email, password };
+      // Use apiClient - Relative path works because baseURL is configured in AuthContext
+      const res = await apiClient.post(`/auth/initiate-registration`, body);
 
       // Success: Move to OTP stage
-      setMessage(res.data.message || 'OTP Sent! Check your email.'); // Show success message from backend
-      setSubmittedEmail(email); // Store email for verification step
-      setStage('enterOtp'); // Change stage
-      setFormData({ ...formData, password: '' }); // Clear password field for security
-      setOtp(''); // Clear any previous OTP input
-
+      setMessage(res.data.message || 'OTP Sent! Check your email.');
+      setSubmittedEmail(email);
+      setStage('enterOtp');
+      setFormData({ ...formData, password: '' });
+      setOtp('');
     } catch (err) {
-      console.error('Initiate Registration Error:', err.response ? err.response.data : err.message);
-      const errorMsg = err.response?.data?.message || // Use backend message first
-                       err.response?.data?.errors?.[0]?.msg || // Use validator message if available
-                       'Registration initiation failed. Please try again.';
-      setErrorMessage(errorMsg);
+      // ... (keep error handling) ...
+       console.error('Initiate Registration Error:', err.response ? err.response.data : err.message);
+       const errorMsg = err.response?.data?.message || err.response?.data?.errors?.[0]?.msg || 'Registration initiation failed. Please try again.';
+       setErrorMessage(errorMsg);
     } finally {
       setIsLoading(false);
     }
   };
 
-  // --- Handler for Step 2: Submitting OTP to Verify ---
+  // Handler for Step 2: Submitting OTP
   const handleSubmitOtp = async (e) => {
     e.preventDefault();
+    // ... (keep validation logic for OTP) ...
+    if (!otp || otp.length !== 6 || !/^\d+$/.test(otp)) { /* ... */ return; }
+    // ... (end validation) ...
+
     setIsLoading(true);
     setMessage('');
     setErrorMessage('');
-
-    if (!otp || otp.length !== 6 || !/^\d+$/.test(otp)) {
-      setErrorMessage('Please enter a valid 6-digit OTP.');
-      setIsLoading(false);
-      return;
-    }
-
     try {
-      const config = { headers: { 'Content-Type': 'application/json' } };
-      // Send the original submitted email and the entered OTP
-      const body = JSON.stringify({ email: submittedEmail, otp });
-
-      // Call the NEW verify endpoint
-      const res = await axios.post(`${API_BASE_URL}/api/auth/verify-registration`, body, config);
+      // const config = { headers: { 'Content-Type': 'application/json' } }; // Not needed
+      const body = { email: submittedEmail, otp };
+      // Use apiClient and the CORRECT verify endpoint
+      const res = await apiClient.post(`/auth/verify-registration`, body); // <-- CORRECTED ENDPOINT
 
       // Success: Registration Complete
-      setMessage(res.data.message || 'Registration successful!'); // Show success message
-      // Redirect to login page after a short delay
+      setMessage(res.data.message || 'Registration successful!');
       setTimeout(() => {
         navigate('/login');
-      }, 2000); // Redirect after 2 seconds
-
+      }, 2000);
     } catch (err) {
-      console.error('Verify Registration Error:', err.response ? err.response.data : err.message);
-      const errorMsg = err.response?.data?.message || // Use backend message first
-                       err.response?.data?.errors?.[0]?.msg || // Use validator message if available
-                       'OTP verification failed. Please check the code or try initiating again.';
-      setErrorMessage(errorMsg);
+      // ... (keep error handling) ...
+       console.error('Verify Registration Error:', err.response ? err.response.data : err.message);
+       const errorMsg = err.response?.data?.message || err.response?.data?.errors?.[0]?.msg || 'OTP verification failed. Please check the code or try initiating again.';
+       setErrorMessage(errorMsg);
     } finally {
       setIsLoading(false);
     }
   };
-
   // --- Go back from OTP stage ---
   const handleGoBack = () => {
       setStage('enterDetails');

@@ -1,68 +1,82 @@
 // server/controllers/userController.js
-const fs = require('fs').promises;
-const path = require('path');
-const User = require('../models/User'); // Adjust path if needed
+const axios = require('axios'); // Need axios or node-fetch for HTTP requests
+// const User = require('../models/user'); // No longer needed
+// const executeKeygen = require('../utils/executeKeygen'); // No longer calling local keygen
 
-// Read path from environment variables - MUST match where keys are saved
-const USER_KEYS_DIR = process.env.USER_KEYS_DIR;
-if (!USER_KEYS_DIR) {
-    console.error("FATAL ERROR: USER_KEYS_DIR environment variable is not set.");
-    // Optionally exit or handle appropriately, as key retrieval will fail
-}
+// Get KGS details from environment variables
+const KGS_URL = process.env.KGS_URL; // e.g., https://your-kgs-service.onrender.com
+const KGS_API_KEY = process.env.KGS_API_KEY; // The secret key shared between Main Server and KGS
 
 /**
- * @desc    Get the logged-in user's private key
+ * @desc    Gets user's private key by requesting it from the KGS.
  * @route   GET /api/users/my-private-key
- * @access  Private (Requires JWT via authMiddleware)
+ * @access  Private (Requires User JWT via authMiddleware)
  */
 exports.getPrivateKey = async (req, res) => {
+    console.log("--- Enter getPrivateKey Controller (Requesting from KGS) ---");
     try {
-        // 1. Get user ID from the authenticated request (added by authMiddleware)
-        const userId = req.user?.id;
-        if (!userId) {
-            console.error('getPrivateKey Controller: No user ID found on req.user. Ensure authMiddleware runs first.');
-            return res.status(401).json({ message: 'Authentication error: User ID not found.' });
+        // 1. Get User Info from verified JWT (attached by authMiddleware)
+        const userEmail = req.user?.email;
+        const userId = req.user?.id; // Maybe needed for logging
+        if (!userEmail || !userId) {
+            console.error('getPrivateKey Controller: User email/id not found on req.user.');
+            return res.status(401).json({ message: 'Authentication error: User identity not found.' });
         }
 
-        // 2. Find the user and explicitly select the privateKeyPath
-        const user = await User.findById(userId).select('+privateKeyPath'); // Select needed field
-        if (!user) {
-            console.warn(`getPrivateKey Controller: User not found for ID: ${userId}`);
-            return res.status(404).json({ message: 'User not found.' });
+        // Retrieve the user's JWT from the incoming request header to forward it
+        const userJwt = req.header('Authorization')?.split(' ')[1];
+        if (!userJwt) {
+            console.error(`getPrivateKey Controller: Could not extract user JWT for user ${userEmail}`);
+            return res.status(401).json({ message: 'Authentication token missing or invalid.' });
         }
 
-        // 3. Get the stored path to the private key
-        const keyPath = user.privateKeyPath;
-        if (!keyPath || typeof keyPath !== 'string') {
-            console.error(`getPrivateKey Controller: privateKeyPath field is missing or invalid for user ID: ${userId}`);
-            return res.status(500).json({ message: 'Server error: Key path information missing or invalid for user.' });
-        }
-        // Basic check: Ensure the path seems to be within the expected directory for safety
-        // This is a simple check, more robust checks might be needed depending on security requirements
-        if (!keyPath.startsWith(USER_KEYS_DIR)) {
-             console.error(`getPrivateKey Controller: User key path "<span class="math-inline">\{keyPath\}" is outside configured USER\_KEYS\_DIR "</span>{USER_KEYS_DIR}". Access denied.`);
-             return res.status(403).json({ message: 'Access to key path denied.' });
-        }
+        console.log(`getPrivateKey Controller: Requesting key from KGS for user: ${userEmail}`);
 
-        console.log(`getPrivateKey Controller: Attempting to access key at path: ${keyPath}`);
+        // 2. Prepare request to KGS
+        if (!KGS_URL || !KGS_API_KEY) {
+             console.error("FATAL: KGS_URL or KGS_API_KEY environment variable not set on Main Server!");
+             return res.status(500).json({ message: "Server configuration error [KGS Connect]." });
+        }
+        const kgsEndpoint = `${KGS_URL}/generate-key`; // Assuming KGS endpoint is /generate-key
+        const kgsRequestData = {
+            email: userEmail, // Send email explicitly
+            userJwt: userJwt  // Forward the user's JWT for KGS to verify
+        };
+        const kgsRequestConfig = {
+            headers: {
+                'Content-Type': 'application/json',
+                'X-KGS-API-Key': KGS_API_KEY // Server-to-server authentication key
+            },
+            timeout: 10000 // Add a timeout (e.g., 10 seconds)
+        };
 
-        // 4. Verify the key file exists and read it securely
+        // 3. Call KGS endpoint
+        let kgsResponse;
         try {
-            await fs.access(keyPath, fs.constants.R_OK); // Check existence and read permission
-        } catch (accessError) {
-            console.error(`getPrivateKey Controller: Private key file not found or inaccessible (permissions?) for user ${userId} at path ${keyPath}:`, accessError);
-            return res.status(404).json({ message: 'Private key file not found or inaccessible.' });
+             kgsResponse = await axios.post(kgsEndpoint, kgsRequestData, kgsRequestConfig);
+        } catch (kgsError) {
+             // Handle errors specifically from the KGS request
+             console.error(`Error calling KGS endpoint (${kgsEndpoint}) for user ${userEmail}:`, kgsError.response?.status, kgsError.response?.data || kgsError.message);
+             const status = kgsError.response?.status || 500;
+             const message = kgsError.response?.data?.message || 'Failed to communicate with Key Generation Service.';
+             return res.status(status).json({ message }); // Relay KGS error status/message
         }
 
-        // Read the key file content
-        const privateKeyData = await fs.readFile(keyPath);
-        console.log(`getPrivateKey Controller: Successfully read key file for user ${userId}`);
 
-        // 5. Send the key back as a Base64 encoded string (common for web transport)
-        res.status(200).send(privateKeyData.toString('base64'));
+        // 4. Check KGS response and extract key
+        // Assuming KGS sends back { privateKeyB64: "..." } on success
+        if (kgsResponse.status === 200 && kgsResponse.data?.privateKeyB64) {
+            console.log(`getPrivateKey Controller: Successfully received key from KGS for ${userEmail}`);
+            // Send the received Base64 key back to the user's browser
+            res.status(200).send(kgsResponse.data.privateKeyB64);
+        } else {
+            // Handle unexpected success response format from KGS
+            console.error(`getPrivateKey Controller: Unexpected response format from KGS for ${userEmail}. Status: ${kgsResponse.status}, Data:`, kgsResponse.data);
+            res.status(500).json({ message: 'Received invalid response from Key Generation Service.' });
+        }
 
     } catch (error) {
-        console.error('getPrivateKey Controller: Server error fetching private key:', error);
-        res.status(500).json({ message: 'Server error retrieving private key.' });
+        console.error(`Unhandled error in getPrivateKey controller for user ${req.user?.email || 'UNKNOWN'}:`, error);
+        res.status(500).json({ message: 'Server error retrieving private key.', error: error.message });
     }
 };

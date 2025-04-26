@@ -156,16 +156,16 @@ const FileUpload = ({ wasmModule, publicParamsBuffer, onUploadSuccess }) => {
         // console.log("Encryption successful (first few bytes):", uint8ArrayToHex(encryptedUint8Array.slice(0, 10))); // Optional log
         // --- ADD LOGGING OF ORIGINAL CIPHERTEXT ---
     
-    try {
+  //   try {
      
-      const originalCipherTextBase64 = Buffer.from(encryptedUint8Array).toString('base64');
-      console.log("DEBUG FileUpload: ORIGINAL Ciphertext Base64 (Before Upload):", originalCipherTextBase64);
-  } catch (bufError) {
-      // Fallback or just log hex if Buffer API isn't readily available
-       console.log("DEBUG FileUpload: ORIGINAL Ciphertext Hex (Start):", uint8ArrayToHex(encryptedUint8Array.slice(0, 20)));
-       console.log("DEBUG FileUpload: ORIGINAL Ciphertext Hex (End):", uint8ArrayToHex(encryptedUint8Array.slice(-20)));
-       console.error("Buffer API might not be available in browser for Base64 conversion", bufError);
-  }
+  //     const originalCipherTextBase64 = Buffer.from(encryptedUint8Array).toString('base64');
+  //     console.log("DEBUG FileUpload: ORIGINAL Ciphertext Base64 (Before Upload):", originalCipherTextBase64);
+  // } catch (bufError) {
+  //     // Fallback or just log hex if Buffer API isn't readily available
+  //      console.log("DEBUG FileUpload: ORIGINAL Ciphertext Hex (Start):", uint8ArrayToHex(encryptedUint8Array.slice(0, 20)));
+  //      console.log("DEBUG FileUpload: ORIGINAL Ciphertext Hex (End):", uint8ArrayToHex(encryptedUint8Array.slice(-20)));
+  //      console.error("Buffer API might not be available in browser for Base64 conversion", bufError);
+  // }
   // --- END LOGGING ---
 
         // --- Prepare Upload Data ---
