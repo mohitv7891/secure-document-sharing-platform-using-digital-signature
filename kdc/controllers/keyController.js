@@ -2,6 +2,8 @@
 const executeKeygen = require('../utils/executeKeygen');
 
 exports.generateKey = async (req, res) => {
+    const functionName = "KDC:generateKey"; // For easier log searching
+  
     console.log("--- Enter generateKey Controller (KGS) ---");
     try {
          // User identity should be attached by authenticateUserJwt middleware

@@ -7,6 +7,13 @@ const authenticateUserJwt = (req, res, next) => {
      const userJwt = req.body.userJwt; // Expect JWT in request body
      const JWT_SECRET = process.env.JWT_SECRET; // Get shared JWT secret
 
+     const functionName = "KDC:authenticateUserJwt"; // For easier log searching
+     console.log(`--- ${functionName}: Middleware running... ---`);
+
+     // --- ADD/VERIFY THIS LOG ---
+     console.log(`${functionName} - Received req.body:`, req.body);
+     // --- END LOG ---
+
      if (!userJwt) {
          console.warn("KGS: User JWT missing in request body.");
          return res.status(401).json({ message: 'User authentication token missing.' });
@@ -24,7 +31,9 @@ const authenticateUserJwt = (req, res, next) => {
         }
         // Attach user info to request for the controller
         req.user = decoded.user;
-        console.log(`KGS: User JWT verified successfully for user: ${req.user.email}`);
+      //  console.log(`KGS: User JWT verified successfully for user: ${req.user.email}`);
+        console.log(`${functionName}: User JWT verified successfully. Attached user: ${JSON.stringify(req.user)}`);
+        
         next();
      } catch (err) {
          console.warn('KGS: User JWT verification failed:', err.name, err.message);

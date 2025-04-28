@@ -1,10 +1,10 @@
-// server/routes/userRoutes.js
+
 const express = require('express');
-const userController = require('../controllers/userController'); // Adjust path if needed
-const authMiddleware = require('../middleware/authMiddleware'); // Adjust path if needed
+const userController = require('../controllers/keyController'); // Adjust path if needed
+const authMiddleware = require('../middleware/kgsAuthMiddleware'); // Adjust path if needed
 
 const router = express.Router();
-
+ 
 // Define the route to get the private key
 // This route is protected by authMiddleware
 router.get(

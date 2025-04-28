@@ -75,6 +75,10 @@ exports.initiateRegistration = async (req, res) => {
         const otp = crypto.randomInt(100000, 999999).toString(); // Generate 6-digit OTP
         console.log(`Generated OTP for ${lowerCaseEmail}: ${otp}`); // DO NOT log OTP in production
 
+        // 4.5. Hash the OTP
+        const hashedOtp = await bcrypt.hash(otp, 10);
+        console.log(`Hashed OTP ready for DB for ${lowerCaseEmail}`);
+
         // 5. Calculate Expiry Time
         const expiresAt = new Date(Date.now() + OTP_EXPIRY_MINUTES * 60 * 1000); // OTP expires in 10 minutes
 
@@ -83,7 +87,7 @@ exports.initiateRegistration = async (req, res) => {
             email: lowerCaseEmail,
             hashedPassword,
             name, // Save name if provided
-            otp, // Store plaintext OTP for direct comparison
+            otp:hashedOtp, // Store plaintext OTP for direct comparison
             expiresAt,
         });
         await pending.save();
@@ -157,11 +161,18 @@ exports.verifyRegistration = async (req, res) => {
 
         // 3. Verify the submitted OTP against the stored OTP
         // Direct comparison as we stored plaintext OTP
-        if (otp !== pendingDoc.otp) {
-            console.log(`Verification failed: Invalid OTP submitted for ${lowerCaseEmail}. Expected: ${pendingDoc.otp}, Received: ${otp}`);
-            // NOTE: Implement attempt limiting in production to prevent brute-force attacks
+        // if (otp !== pendingDoc.otp) {
+        //     console.log(`Verification failed: Invalid OTP submitted for ${lowerCaseEmail}. Expected: ${pendingDoc.otp}, Received: ${otp}`);
+        //     // NOTE: Implement attempt limiting in production to prevent brute-force attacks
+        //     return res.status(400).json({ message: 'Invalid OTP submitted.' });
+        // }
+
+        // Instead use bcrypt.compare:
+            const isOtpMatch = await bcrypt.compare(otp, pendingDoc.otp);
+            if (!isOtpMatch) {
+            console.log(`Verification failed: Invalid OTP submitted for ${lowerCaseEmail}.`);
             return res.status(400).json({ message: 'Invalid OTP submitted.' });
-        }
+}
 
         // --- OTP Correct and Not Expired ---
         console.log(`OTP verified successfully for ${lowerCaseEmail}`);
